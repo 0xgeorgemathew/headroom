@@ -64,11 +64,11 @@ if [ "$uninstall" = 1 ]; then
   exit 0
 fi
 
-# Requirements: Apple silicon, macOS 26 or later.
+# Requirements: Apple silicon, macOS 15 or later.
 [ "$(uname -s)" = "Darwin" ] || fail "Headroom runs on macOS."
 [ "$(uname -m)" = "arm64" ] || fail "Headroom needs an Apple silicon Mac."
 major=$(sw_vers -productVersion | cut -d. -f1)
-[ "$major" -ge 26 ] || fail "Headroom needs macOS 26 or later (this Mac runs $(sw_vers -productVersion))."
+[ "$major" -ge 15 ] || fail "Headroom needs macOS 15 or later (this Mac runs $(sw_vers -productVersion))."
 
 # Find the release asset.
 if [ -n "$version" ]; then
