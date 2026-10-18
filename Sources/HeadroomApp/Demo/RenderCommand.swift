@@ -20,6 +20,20 @@ enum RenderCommand {
                 }
             }
         }
+        if name == "all" || name == "activity" {
+            for theme in themes {
+                for mode in [ActivityMode.all, .newOnly] {
+                    for range in ActivityRange.allCases where mode == .all || range == .day {
+                        if let rep = PopoverPage.renderActivity(theme: theme, mode: mode, range: range, collecting: false) {
+                            write(rep, to: outDir.appendingPathComponent("activity-\(mode == .all ? "all" : "new")-\(range.label.lowercased())-\(theme.isDark ? "dark" : "light").png")); written += 1
+                        }
+                    }
+                }
+                if let rep = PopoverPage.renderActivity(theme: theme, mode: .all, range: .day, collecting: true) {
+                    write(rep, to: outDir.appendingPathComponent("activity-collecting-\(theme.isDark ? "dark" : "light").png")); written += 1
+                }
+            }
+        }
         print("rendered \(written) image(s) to \(outDir.path)")
         return 0
     }
@@ -49,5 +63,56 @@ enum PopoverPage {
             }
             PopoverChrome.drawFooter(FooterModel(text: "All systems normal", status: .fresh), x: pad, y: y, width: cw, theme: theme, ctx: ctx, out: nil)
         }
+    }
+
+    static func renderActivity(theme: Theme, mode: ActivityMode, range: ActivityRange, collecting: Bool) -> NSBitmapImageRep? {
+        let now = Demo.activityNow
+        let pricing = (try? PriceTable.bundled()).map { PricingEngine(table: $0) }
+        let presenter = ActivityPresenter(now: now, locale: Locale(identifier: "en_US"), pricing: pricing)
+        let aggregates = pricing.map { Demo.activityAggregates(now: now, pricing: $0) } ?? []
+        let selection: Range<Int>? = range == .day ? 4..<8 : nil
+        let cards = [Provider.claude, .codex].map { presenter.card($0, aggregates: aggregates, range: range, selection: selection) }
+        let weeks = Demo.pastWeeks(collecting: collecting)
+        let w = PopoverChrome.width, pad = PopoverChrome.pad, cw = w - pad * 2
+        func layout(_ ctx: CGContext?) -> CGFloat {
+            var y = pad + PopoverChrome.headerHeight
+            if let ctx {
+                let modes = Segmented(items: ["All", "New only"], selected: mode.rawValue, font: F.sf(11.5, 600), padX: 10, height: 26)
+                modes.draw(in: CGRect(x: pad + 1, y: y, width: modes.width, height: 26), theme: theme, ctx: ctx, out: nil) { .activityMode($0) }
+                let ranges = Segmented(items: ActivityRange.allCases.map(\.label), selected: range.rawValue, font: F.sf(11.5, 600), padX: 10, height: 26)
+                ranges.draw(in: CGRect(x: pad + cw - 1 - ranges.width, y: y, width: ranges.width, height: 26), theme: theme, ctx: ctx, out: nil) { .activityRange($0) }
+            }
+            y += 26 + 10
+            for (i, c) in cards.enumerated() {
+                if i > 0 { y += 10 }
+                y += ActivityCardRenderer.draw(c, mode: mode, breakdown: .model, origin: CGPoint(x: pad, y: y), width: cw, theme: theme, ctx: ctx)
+            }
+            y += 16
+            if let ctx { PastWeeksRenderer.drawSectionHeader(x: pad, y: y, width: cw, theme: theme, ctx: ctx) }
+            y += PastWeeksRenderer.sectionHeaderHeight
+            for (i, wk) in weeks.enumerated() {
+                if i > 0 { y += 10 }
+                y += PastWeeksRenderer.draw(wk, origin: CGPoint(x: pad, y: y), width: cw, theme: theme, ctx: ctx)
+            }
+            if !collecting {
+                if let ctx { PastWeeksRenderer.drawLegend(x: pad, y: y, width: cw, theme: theme, ctx: ctx) }
+                y += PastWeeksRenderer.legendHeight
+            }
+            if let ctx { PopoverChrome.drawFooter(FooterModel(text: "All systems normal", status: .fresh), x: pad, y: y, width: cw, theme: theme, ctx: ctx, out: nil) }
+            return y + PopoverChrome.footerHeight + pad
+        }
+        let measured = measureHeight(layout)
+        return renderImage(size: CGSize(width: w, height: measured)) { ctx in
+            PopoverChrome.drawWindow(CGRect(x: 0, y: 0, width: w, height: measured), theme: theme, ctx: ctx)
+            PopoverChrome.drawHeader(x: pad, y: pad, width: cw, selected: 1, theme: theme, ctx: ctx, out: nil)
+            _ = layout(ctx)
+        }
+    }
+
+    /// Runs a layout pass against a scratch context to learn its height.
+    static func measureHeight(_ layout: @escaping (CGContext?) -> CGFloat) -> CGFloat {
+        var height: CGFloat = 0
+        _ = renderImage(size: CGSize(width: 4, height: 4), scale: 1) { ctx in height = layout(ctx) }
+        return height
     }
 }
