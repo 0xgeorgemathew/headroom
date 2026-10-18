@@ -7,7 +7,7 @@
 #   make screenshots  render the README images in media/ from fixtures (needs Google Chrome)
 #   make release    zip the signed app into dist/ with a SHA-256 checksum
 
-VERSION  := 0.1.0-beta.1
+VERSION  := 0.1.0-beta.2
 APP      := build/Headroom.app
 RELEASE  := .build/release
 # First valid Apple Development identity, by SHA-1 (names can be ambiguous).
