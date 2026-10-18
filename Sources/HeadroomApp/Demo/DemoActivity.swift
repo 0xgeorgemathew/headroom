@@ -24,7 +24,8 @@ extension Demo {
                                                  cacheRead: Int64(total * 0.964), output: Int64(total * 0.006))
                         let cost = pricing.price(tokens: tokens, model: model)
                         out.append(HourAggregate(provider: p, hour: hour, model: model, project: projects[(i + j) % projects.count],
-                                                 tokens: tokens, micros: cost.micros, priced: cost.priced))
+                                                 tokens: tokens, micros: cost.micros, priced: cost.priced,
+                                                 classMicros: [cost.input, cost.cacheWrite, cost.cacheRead, cost.output]))
                     }
                 }
             }

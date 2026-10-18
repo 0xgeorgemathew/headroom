@@ -334,3 +334,17 @@ enum CodexLogParser {
         return ok ? out : nil
     }
 }
+
+extension PassiveCodexLimits {
+    /// The log-carried limits as a reading. Only `openai`-provider sessions are trusted
+    /// (PLAN §5.2); custom-provider sessions return nil.
+    public func reading(accountKey: String?) -> LimitReading? {
+        guard providerIsOpenAI else { return nil }
+        func window(_ w: Window?) -> CodexPassiveRateLimits.Window? {
+            w.map { .init(used_percent: $0.usedPercent, window_minutes: $0.windowMinutes, resets_at: $0.resetsAt.map { Int($0.timeIntervalSince1970) }) }
+        }
+        let raw = CodexPassiveRateLimits(limit_id: limitID, primary: window(primary), secondary: window(secondary),
+                                         plan_type: planType, rate_limit_reached_type: rateLimitReachedType)
+        return raw.reading(at: timestamp, accountKey: accountKey)
+    }
+}

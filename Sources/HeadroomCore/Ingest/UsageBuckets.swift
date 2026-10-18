@@ -225,7 +225,7 @@ struct Contribution: Sendable, Hashable {
 
 /// The event ledger plus the buckets derived from it.
 struct UsageLedger: Sendable {
-    var entries: [UInt64: Contribution] = [:]
+    var entries = ContributionTable()
     var buckets = UsageBuckets()
     var files: [String] = []
     private var modelIndex: [String: UInt16] = [:]
@@ -241,10 +241,8 @@ struct UsageLedger: Sendable {
         for (i, m) in models.enumerated() { modelIndex[m] = UInt16(i) }
         for (i, p) in projects.enumerated() { projectIndex[p] = UInt16(i) }
         for (i, f) in files.enumerated() { fileIndex[f] = UInt32(i) }
-        for c in entries {
-            self.entries[c.keyHash] = c
-            apply(c, sign: 1)
-        }
+        self.entries = ContributionTable(entries)
+        for c in self.entries.values { apply(c, sign: 1) }
     }
 
     static func hash(_ key: String) -> UInt64 {
@@ -327,26 +325,24 @@ struct UsageLedger: Sendable {
     /// Drops events older than `cutoff` (retention).
     mutating func prune(before cutoff: Date) {
         let t = cutoff.timeIntervalSince1970
-        let old = entries.values.filter { $0.timestamp < t }
-        for c in old {
-            entries[c.keyHash] = nil
-            apply(c, sign: -1)
-        }
+        for c in entries.removeAll(where: { $0.timestamp < t }) { apply(c, sign: -1) }
     }
 
     /// Recomputes every event's cost, e.g. after `pricing.override.json` changes.
     mutating func reprice(_ pricer: EventPricer) {
         buckets.slots = [:]
-        for (h, var c) in entries {
+        let models = buckets.models
+        var repriced: [Contribution] = []
+        entries.update { c in
             let event = UsageEvent(
                 provider: c.provider, timestamp: Date(timeIntervalSince1970: c.timestamp),
-                model: Int(c.model) < buckets.models.count ? buckets.models[Int(c.model)] : "unknown",
+                model: Int(c.model) < models.count ? models[Int(c.model)] : "unknown",
                 project: nil, tokens: c.tokens, speed: c.speed, dedupeKey: nil)
             let p = pricer(event)
             c.cost = p.cost
             c.priced = p.priced
-            entries[h] = c
-            apply(c, sign: 1)
+            repriced.append(c)
         }
+        for c in repriced { apply(c, sign: 1) }
     }
 }

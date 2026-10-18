@@ -142,6 +142,9 @@ public actor ClaudeRefresher {
         self.locateClaude = locateClaude
     }
 
+    /// When `claude -p /usage` last ran (persisted so the throttle survives restarts).
+    public var lastRunDate: Date? { lastRun }
+
     public enum Outcome: Sendable, Hashable {
         case ran(output: String)
         case throttled

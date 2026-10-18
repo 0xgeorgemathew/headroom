@@ -10,6 +10,8 @@ struct HourAggregate: Sendable, Hashable {
     var tokens: TokenCounts
     var micros: Int64
     var priced: Bool
+    /// Micro-dollars by token class: input, cache write, cache read, output.
+    var classMicros: [Int64] = []
 }
 
 /// Builds Activity cards from hourly aggregates for a range and a selection.
@@ -109,6 +111,11 @@ struct ActivityPresenter {
     private func classRows(_ items: [HourAggregate], total: Int64) -> [BreakdownRow] {
         var input: Double = 0, write: Double = 0, read: Double = 0, output: Double = 0
         for a in items where a.micros > 0 {
+            if a.classMicros.count == 4 {
+                input += Double(a.classMicros[0]); write += Double(a.classMicros[1])
+                read += Double(a.classMicros[2]); output += Double(a.classMicros[3])
+                continue
+            }
             guard let c = pricing?.price(tokens: a.tokens, model: a.model), c.micros > 0 else { continue }
             let scale = Double(a.micros) / Double(c.micros)
             input += Double(c.input) * scale; write += Double(c.cacheWrite) * scale

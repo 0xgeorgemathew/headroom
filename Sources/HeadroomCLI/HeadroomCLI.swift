@@ -31,7 +31,9 @@ public enum HeadroomCLI {
         let json = args.contains("--json")
         switch args.first {
         case "statusline":
-            return statusline(Array(args.dropFirst()), style: style, output: output, url: snapshotURL, now: now())
+            // Status lines are read through pipes (Claude Code, tmux), so only NO_COLOR turns colors off.
+            let noColor = !(environment["NO_COLOR"] ?? "").isEmpty
+            return statusline(Array(args.dropFirst()), style: Style(colors: !noColor), output: output, url: snapshotURL, now: now())
         case "wait":
             return WaitCommand.run(Array(args.dropFirst()), style: style, output: output, url: snapshotURL, now: now)
         case "mcp":

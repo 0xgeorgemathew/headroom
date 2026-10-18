@@ -1,0 +1,106 @@
+.TH HEADROOM 1 "2026-10-18" "Headroom 1.0" "User Commands"
+.SH NAME
+headroom \- weekly Claude and Codex allowance left, against the time left until renewal
+.SH SYNOPSIS
+.B headroom
+.RB [ \-\-json ]
+.RB [ \-\-refresh ]
+.br
+.B headroom statusline
+.RB [ \-\-format
+.IR claude | tmux | sketchybar | plain ]
+.RB [ \-\-provider
+.IR claude | codex ]
+.br
+.B headroom wait
+.RB [ \-\-provider
+.IR claude | codex | any ]
+.RB [ \-\-timeout
+.IR duration ]
+.RB [ \-\-json ]
+.br
+.B headroom mcp
+.SH DESCRIPTION
+.B headroom
+prints what Headroom.app knows about your Claude and OpenAI Codex plans: how much of
+the weekly allowance is left, how long until it renews, the pacing verdict, the 5-hour
+session, model caps and reset credits.
+.PP
+It reads only the snapshot the app writes to
+.IR "~/Library/Application Support/Headroom/snapshot.json" .
+It never reads credentials and never uses the network. When the app isn't running it
+prints the last snapshot and says how old it is.
+.SH COMMANDS
+.TP
+.B headroom
+One line per provider (emoji cells, percent left, time to renewal), then indented lines
+for the verdict, a 5-hour session warning (at 75% used or more), blocks, faults and
+reset credits.
+.TP
+.B \-\-json
+Every number in the snapshot, plus
+.B stale
+and
+.BR age_seconds .
+Schema version 1.
+.TP
+.B \-\-refresh
+Asks the app for fresh limits (a Darwin notification,
+.BR com.headroom.refresh ),
+then waits up to 10 seconds for a new snapshot. Requests closer than 30 seconds apart
+reuse the current snapshot.
+.TP
+.B statusline
+One short line for a prompt, tmux, SketchyBar or Claude Code's status line. It reads and
+ignores Claude Code's JSON on standard input. Colors use ANSI (claude) or tmux style
+codes (tmux); sketchybar and plain have none.
+.B NO_COLOR
+turns colors off.
+.TP
+.B wait
+Blocks while the 5-hour session or the weekly limit is at 100%, or a major outage is
+active, then returns. It wakes when the snapshot changes or at the reset time and uses
+no CPU while waiting. With
+.B \-\-provider any
+(the default) it returns as soon as either provider has capacity.
+.B \-\-json
+prints
+.B {"blocked_by", "until"}
+first.
+.TP
+.B mcp
+Optional. A stdio Model Context Protocol server with one read-only tool,
+.BR get_headroom .
+Add it with:
+.B claude mcp add \-\-scope user headroom \-\- ~/.local/bin/headroom mcp
+.SH EXIT STATUS
+.TP
+.B 0
+Success; for
+.BR wait ,
+capacity is back.
+.TP
+.B 2
+.B wait
+timed out.
+.TP
+.B 3
+No snapshot exists yet (open Headroom.app).
+.TP
+.B 64
+Usage error.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+Disables colors.
+.TP
+.B HEADROOM_HOME
+Reads the snapshot from this directory instead.
+.SH FILES
+.I ~/Library/Application Support/Headroom/snapshot.json
+.SH EXAMPLES
+.nf
+headroom
+headroom statusline \-\-format tmux
+headroom wait \-\-provider claude && claude \-p "continue the refactor"
+.fi
