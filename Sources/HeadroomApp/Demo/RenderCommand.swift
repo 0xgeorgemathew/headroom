@@ -34,6 +34,9 @@ enum RenderCommand {
                 }
             }
         }
+        if name == "all" || name == "menubar" {
+            if let rep = PopoverPage.renderMenuBars(now: now) { write(rep, to: outDir.appendingPathComponent("menubar.png")); written += 1 }
+        }
         print("rendered \(written) image(s) to \(outDir.path)")
         return 0
     }
@@ -114,5 +117,40 @@ enum PopoverPage {
         var height: CGFloat = 0
         _ = renderImage(size: CGSize(width: 4, height: 4), scale: 1) { ctx in height = layout(ctx) }
         return height
+    }
+
+    /// Menu bar strips on dark, light and busy wallpapers, for every override.
+    static func renderMenuBars(now: Date) -> NSBitmapImageRep? {
+        let presenter = Presenter(now: now, locale: Locale(identifier: "en_US"))
+        let rows: [(String, [PaceInput])] = [
+            ("mockup", [Demo.claudeMockup(now: now), Demo.codexMockup(now: now)]),
+            ("on pace + very tight", [Demo.state(.claude, used: 0.52, elapsedH: 84, now: now), Demo.state(.codex, used: 0.82, elapsedH: 72, now: now)]),
+            ("rose session + blocked", [Demo.state(.claude, used: 0.46, elapsedH: 90, session: 0.94, now: now), Demo.state(.codex, used: 0.46, elapsedH: 90, session: 1, now: now)]),
+            ("fault + weekly blocked", [Demo.state(.claude, used: 0.46, elapsedH: 90, fault: .offline, now: now), Demo.state(.codex, used: 1, elapsedH: 140, now: now)]),
+        ]
+        let w: CGFloat = 340, stripH: CGFloat = 28
+        let backgrounds = ["dark", "light", "busy"]
+        let h = CGFloat(rows.count * backgrounds.count) * (stripH + 6) + 6
+        return renderImage(size: CGSize(width: w, height: h)) { ctx in
+            ctx.fill(CGPath(rect: CGRect(x: 0, y: 0, width: w, height: h), transform: nil), rgb(0x808080))
+            var y: CGFloat = 6
+            for bg in backgrounds {
+                for (_, inputs) in rows {
+                    let r = CGRect(x: 6, y: y, width: w - 12, height: stripH)
+                    let dark = bg != "light"
+                    switch bg {
+                    case "dark": ctx.fillLinear(rounded(r, 6), [rgb(0x1A2150), rgb(0x3B2A5C), rgb(0x0F2F45)], from: r.origin, to: CGPoint(x: r.maxX, y: r.maxY))
+                    case "light": ctx.fillLinear(rounded(r, 6), [rgb(0xD6E4F7), rgb(0xF4E2EC), rgb(0xD8EEE7)], from: r.origin, to: CGPoint(x: r.maxX, y: r.maxY))
+                    default:
+                        ctx.fillLinear(rounded(r, 6), [rgb(0xE07A2F), rgb(0x2C7A4B), rgb(0xC9D84A), rgb(0x3A3FB0)], from: r.origin, to: CGPoint(x: r.maxX, y: r.maxY))
+                    }
+                    ctx.fill(rounded(r, 6), dark ? rgb(0x080810, 0.3) : white(0.45))
+                    let items = presenter.menuBarItems(inputs, mode: .both, enabled: [.claude, .codex])
+                    let iw = StatusItemRenderer.width(items)
+                    StatusItemRenderer.draw(items, in: CGRect(x: r.maxX - 12 - iw, y: r.midY - 11, width: iw, height: 22), dark: dark, ctx: ctx)
+                    y += stripH + 6
+                }
+            }
+        }
     }
 }
