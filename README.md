@@ -1,239 +1,107 @@
 <p align="center">
-  <img src="assets/icon.svg" width="96" height="96" alt="Headroom icon">
-</p>
-
-<h1 align="center">Headroom</h1>
-
-<p align="center">
-  <b>How much of your weekly Claude and Codex allowance is left, against the time left until it renews.</b><br>
-  A native macOS menu-bar app and a <code>headroom</code> command. Local and read-only.
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/hero-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="media/hero-light.png">
+    <img src="media/hero-dark.png" alt="Headroom: Will this week's allowance last? The Headroom popover open under its menu bar meters.">
+  </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/0xgeorgemathew/headroom/releases"><img alt="Release" src="https://img.shields.io/github/v/release/0xgeorgemathew/headroom?include_prereleases&label=release"></a>
-  <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-black">
-  <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-arm64-black">
-  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138">
-  <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-2ea44f">
+  <a href="https://github.com/0xgeorgemathew/headroom/releases"><img alt="Latest beta" src="https://img.shields.io/github/v/release/0xgeorgemathew/headroom?include_prereleases&label=latest%20beta&color=4A8EFF"></a>
+  <img alt="For macOS 26 and later" src="https://img.shields.io/badge/macOS-26%2B-1C1C1E">
+  <img alt="Free and open" src="https://img.shields.io/badge/license-public%20domain-30D158">
 </p>
 
 <p align="center">
-  <img src="media/hero.png" alt="Headroom's Pace tab (dark) and Activity tab (light)">
+  Headroom sits in your menu bar and answers one question for your Claude and Codex plans:<br>
+  <b>do you have room to spare this week, are you on pace, or should you slow down?</b>
 </p>
 
-> **Beta.** This is the first public beta. It's built and tested on one Mac; please
-> [open an issue](https://github.com/0xgeorgemathew/headroom/issues) if something looks wrong.
+<br>
 
 ## Install
+
+Paste this into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/0xgeorgemathew/headroom/main/install.sh | bash
 ```
 
-The script downloads the latest release, checks its SHA-256, removes the download quarantine
-(the app is signed but not notarized), installs `Headroom.app` to `/Applications`, links the
-`headroom` command into `~/.local/bin` with its man page, and opens the app. Then turn on
-**Launch at login** in Settings.
+Headroom appears in your menu bar a few seconds later. Open its Settings to turn on **Launch at login**.
 
-Requirements: an Apple silicon Mac on **macOS 26** or later, and Claude Code and/or the Codex CLI
-signed in with a subscription (Claude Pro/Max/Team, ChatGPT plan).
+You'll need a Mac with Apple silicon on macOS 26 or later, and Claude Code or Codex signed in to your subscription.
 
-<details>
-<summary>Other ways to install, update or remove</summary>
+<br>
 
-- **A specific version:** `curl -fsSL …/install.sh | bash -s -- --version v0.1.0-beta.1`
-- **Update:** run the install command again.
-- **Manual:** download `Headroom-<version>.zip` from [Releases](https://github.com/0xgeorgemathew/headroom/releases),
-  unzip, move `Headroom.app` to `/Applications`, then run `xattr -dr com.apple.quarantine /Applications/Headroom.app`.
-- **Uninstall:** `curl -fsSL …/install.sh | bash -s -- --uninstall` (add `--purge` to also delete
-  `~/Library/Application Support/Headroom`).
-- **From source:** see [Build](#build).
+## Your week, at a glance
 
-</details>
+<img src="media/menubar.png" alt="Headroom's menu bar meters on dark, light and busy wallpapers">
 
-## What it shows
+Each provider gets five cells in your menu bar. **Blue** means you have room to spare, **white** means you're on pace, **amber** and **rose** mean slow down. An hourglass shows when unused allowance is about to renew, and a countdown appears when your 5-hour session is nearly used up.
 
-### Pace: will this week's allowance last?
+## Pace, not just a percentage
 
-Each provider gets a card with the allowance left, the time to renewal, a five-cell meter with an
-*even pace* caret, and a glide path of the week so far with a dotted projection. The verdict is a
-single number, **S = allowance left ÷ time left**: *you can run at S× even pace until the reset
-and land exactly at zero.*
+<img src="media/pace.png" alt="The four pacing states: Plenty available, On pace, Getting tight, Very tight">
 
-<p align="center"><img src="media/pacing-states.png" alt="The four pacing states"></p>
+82% left sounds great until you notice it renews tomorrow. Headroom compares what's left with the time left, draws your week so far, and tells you in one sentence whether to use more, keep going, or ease off, and roughly when you'd run out.
 
-| State | Rule | Means |
-|---|---|---|
-| **Plenty available** (azure) | S ≥ 2 and ≥ 20% left | Allowance will go unused; the hourglass appears when renewal is under 48 h |
-| **On pace** (pearl) | 1 ≤ S < 2 | Lasts to renewal at this pace |
-| **Getting tight** (amber) | 0.75 ≤ S < 1, or the last 24 h burn runs out early | Ease off a little |
-| **Very tight** (rose) | S < 0.75 | You'll run out early at even pace |
+## A warning before the 5-hour limit
 
-The last-24-hour projection can raise the state but never lower it, and state changes need a ±0.05
-crossing and 10 minutes of dwell, so the color doesn't flicker.
+<img src="media/session.png" alt="The 5-hour session as a quiet row, an amber warning, a rose warning, and paused until reset">
 
-### The 5-hour session warns before it bites
+Your 5-hour session stays a quiet line until it matters. At 75% it turns into an amber warning with a countdown, at 90% it turns rose, and when you hit the limit it tells you exactly when you're back.
 
-<p align="center"><img src="media/session-warnings.png" alt="5-hour session: row, amber, rose, blocked"></p>
+## Caps, early resets and expiring credits
 
-Below 75% used the session is a row. From 75% it becomes an amber banner with a countdown, rose
-from 90%, and *5-hour limit reached* at 100%. The menu bar shows the countdown too.
+<img src="media/callouts.png" alt="Callouts for a model cap reached, a model cap running low, an early reset, and reset credits about to expire">
 
-### Model caps, early resets and reset credits
+If a single model like Fable has its own weekly cap, Headroom tells you when that cap is the one to watch. It also notices when your week resets early, and highlights reset credits that are about to expire so you don't lose them.
 
-<p align="center"><img src="media/callouts.png" alt="Callouts: model cap reached, model cap tighter, early reset, reset credits"></p>
+## A plain answer when something's off
 
-### It says exactly what's wrong, and keeps the last good reading
+<img src="media/faults.png" alt="Messages for offline, signed out, format changed, service outage, enterprise plan, and CLI not found">
 
-<p align="center"><img src="media/faults.png" alt="Fault banners: offline, signed out, format changed, outage, enterprise, CLI not found"></p>
+Offline, signed out, a service outage: Headroom says what happened and how to fix it, keeps showing your last reading with its age, and tries again on its own.
 
-### Activity: tokens and what they would cost at API rates
+## What your usage is worth
 
-<p align="center"><img src="media/activity.png" alt="Activity tab: 7 days, new only, collecting history"></p>
+<img src="media/activity.png" alt="The Activity tab with hourly token bars and cost, and Past weeks">
 
-Hourly bars from your local Claude Code and Codex logs (24 hours, 7 days or 30 days), with cached
-reads, new input and output stacked. Drag across the bars to select a span (double-click to select
-from a bar to now) and see its tokens, its cost at API rates, and a breakdown **by model, project
-or token class**. Prices are applied per request from a bundled rate card (long-context, fast-mode
-and cache-write tiers included); unknown models are counted and labelled *unpriced*. Override or
-add prices in `~/Library/Application Support/Headroom/pricing.override.json`.
+The Activity tab shows your tokens hour by hour for the last day, week or month, and what they would have cost at API prices. Drag across the bars to price any stretch of time, and break it down by model or project. **Past weeks** shows how much of each week you used, which weeks ran out early, and how much renewed unused.
 
-**Past weeks** shows each renewal week against a track to 100%, the weeks that ran out (and how many
-hours early), 5-hour limit hits, early resets and plan changes. Click a week to see its glide path.
+## Share your burn
 
-### The menu bar
+<img src="media/share.png" alt="Share card, two-provider snapshot, and a text version">
 
-<p align="center"><img src="media/menubar.png" alt="Menu bar on dark, light and busy wallpapers"></p>
+Right-click any card to copy a share image or a text version. Shares never include project names or your history.
 
-Brand mark plus a five-cell meter per provider, an hourglass when *Plenty* is about to renew, a
-session timer while the 5-hour session is at 75% or more, and pause/fault overlays. Beside the
-notch, choose **Most urgent** in Settings to show just the provider that needs attention.
+## Also in your terminal
 
-### Light and dark
+<img src="media/terminal.png" alt="The headroom command showing the weekly summary, a one-line status, and waiting for the session to reset">
 
-<p align="center"><img src="media/appearance.png" alt="Pace tab in light and dark appearance"></p>
+Type `headroom` for the same summary, add a one-line status to your prompt or editor, or have a long job wait until your session frees up. `man headroom` has the details.
 
-### Share your burn
+<br>
 
-Right-click any card: **Copy Card** (1200×675 PNG), **Copy Snapshot** (both providers) or
-**Copy as Text**. Shares never include project names, paths or history curves; the share model has
-no fields for them.
+## Private by design
 
-<p align="center"><img src="media/share-card.png" alt="Share card"></p>
+- Headroom only **reads**. It never sends a prompt, never uses one of your reset credits, and never changes your sign-in.
+- Your token counts come from files already on your Mac. Nothing you type is stored, and nothing is uploaded.
+- The only places it connects to are Anthropic's usage page and, if you leave it on, the Claude and OpenAI status pages. No analytics, ever.
+- It's light: about 17 MB of memory and no CPU while it waits.
 
-```text
-Headroom · Mon, 2 – 6 PM · 4 hours
-189M Claude tokens · ≈ $76.51 at API rates
-▇█▆▃
-96% cached · 3.0% new · 0.6% out
-ate 1% of my week
-🟦🟦🟦🟦⬛ 82% of week left
-```
+## Update or remove
 
-## The `headroom` command
-
-```text
-$ headroom
-Claude  🟦🟦🟦🟦⬛   82% · renews in 20h ⏳
-  ↳ plenty · 80% renews unused at this pace
-  ↳ ⚠ 5-hour session 16% left · resets 12:30
-Codex   🟨🟨🟨⬛⬛   59% · renews in 4d
-  ↳ tight · runs out Fri 4 PM, 21h early
-  ↳ ⏳ 1 reset credit lapses in 3d
-```
-
-| Command | What it does |
-|---|---|
-| `headroom` | The summary above |
-| `headroom --json` | Every number (windows, S, state, caps, credits, faults, 24 h activity, costs), schema 1 |
-| `headroom --refresh` | Asks the app for fresh limits, waits for them, prints |
-| `headroom statusline [--format claude\|tmux\|sketchybar\|plain]` | One short line; honors `NO_COLOR` |
-| `headroom wait [--provider claude\|codex\|any] [--timeout 6h] [--json]` | Blocks until the 5-hour session, weekly limit or outage clears. Exit 0 = capacity back, 2 = timeout, 3 = no data |
-
-The CLI only reads the snapshot the app writes (`~/Library/Application Support/Headroom/snapshot.json`).
-It never touches credentials or the network, and it runs in about 8 ms. `man headroom` has the details.
-
-**Claude Code status line** (`~/.claude/settings.json`):
-
-```json
-{ "statusLine": { "type": "command", "command": "~/.local/bin/headroom statusline" } }
-```
-
-**Run a long job when the session frees up:**
+Run the install command again to update. To remove Headroom:
 
 ```sh
-headroom wait --provider claude && claude -p "continue the refactor"
+curl -fsSL https://raw.githubusercontent.com/0xgeorgemathew/headroom/main/install.sh | bash -s -- --uninstall
 ```
 
-## Privacy and safety
+## License
 
-Headroom is read-only toward both providers, and the guarantees are enforced in code and tests:
+Public domain under [The Unlicense](LICENSE). Use it, change it, sell it; no permission needed.
 
-- **Claude:** `GET https://api.anthropic.com/api/oauth/usage` with Claude Code's own OAuth token,
-  read through `/usr/bin/security find-generic-password` and kept in memory only. If the token has
-  expired, Headroom runs exactly `claude -p /usage --no-session-persistence --strict-mcp-config`
-  with hooks disabled (no tokens used), at most every 30 min while the popover is open or every 2 h
-  otherwise, so Claude Code refreshes its own credentials.
-- **Codex:** fresh `rate_limits` from your session logs first; otherwise the running Codex app-server
-  daemon, or an isolated `codex app-server` (plugins, apps, hooks and MCP servers turned off) that
-  is closed after the read. Only `initialize`, `account/read` and `account/rateLimits/read` can be
-  sent: the method set is a three-case enum, and a test checks it.
-- **Never:** sends a prompt, starts a session, redeems a reset credit, or refreshes, rewrites or
-  stores credentials.
-- **Network:** only `api.anthropic.com` and, if enabled, `status.claude.com` and `status.openai.com`.
-  A URLSession delegate rejects every other host. No analytics, crash reporter or updater.
-- **Local logs:** `~/.claude/projects` and `~/.codex/sessions` are tailed read-only. No prompt or
-  response text is kept, only token counts per request.
+<br>
 
-## Efficient by design
-
-Measured on an M3 Pro with real logs:
-
-| | Budget | Measured |
-|---|---|---|
-| Memory while idle | ≤ 25 MB | 16–17 MB |
-| Memory with the popover open | ≤ 45 MB | 29–31 MB |
-| CPU while idle | ≈ 0% | 0.0%, 0.4 wakeups/min |
-| First scan of 35 days of logs (3.3 GB) | ≤ 3 s | 0.9–1.7 s |
-| Incremental ingest | ≤ 5 ms per MB | 1.7 ms per MB |
-| `headroom statusline` | ≤ 10 ms | 7–8 ms |
-| App binary | ≤ 5 MB | 2.3 MB |
-
-It's Swift 6, AppKit and Core Graphics with no third-party dependencies, and it doesn't use SwiftUI.
-Log files are tailed by appended bytes (FSEvents, mmap, memchr), and Codex's compressed `.jsonl.zst`
-rollouts are read with a built-in zstd decoder. Polling is adaptive and pauses during sleep and
-screen lock.
-
-## Build
-
-Needs Xcode 27 (Swift 6.4) and an Apple Development signing identity.
-
-```sh
-make test          # 237 tests: pacing, pricing, ingestion, providers, safety, CLI
-make install       # build, sign, install to /Applications, link the CLI, launch
-make screenshots   # render every UI state from fixtures into media/ (needs ImageMagick)
-make release       # dist/Headroom-<version>.zip and its SHA-256
-```
-
-Every screenshot in this README is rendered from fixtures by the app itself
-(`HeadroomApp --render <scenario|all> --out <dir>`), so no real account data appears in it.
-
-| Module | Contents |
-|---|---|
-| `HeadroomKit` | Models, pacing engine, pricing, snapshot schema, formatters (Foundation only) |
-| `HeadroomCore` | Log ingestion, zstd, provider clients, credentials, scheduler, stores |
-| `HeadroomApp` | Menu bar, popover, settings, share renderer |
-| `headroom` | The CLI (links `HeadroomKit` only) |
-
-## Notes
-
-- Built for standard setups: Claude Code signed in with a subscription, and Codex signed in with
-  ChatGPT using the built-in `openai` provider. Usage from other providers still counts toward
-  Activity and cost, but not toward limits.
-- Claude Team seats without an all-models weekly limit show the tightest model-scoped weekly cap
-  (for example *left this week · Fable*).
-- The app is signed with an Apple Development certificate and isn't notarized, which is why the
-  installer removes the quarantine flag.
-- Claude and the Claude mark are trademarks of Anthropic; OpenAI and Codex are trademarks of OpenAI.
-  The marks come from [Simple Icons](https://simpleicons.org) and are used only to label each
-  provider. Headroom isn't affiliated with either company.
+<p align="center"><sub>Claude is a trademark of Anthropic. OpenAI and Codex are trademarks of OpenAI. Headroom is an independent project and isn't affiliated with either.</sub></p>

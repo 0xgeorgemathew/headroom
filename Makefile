@@ -4,7 +4,7 @@
 #   make app        assemble and sign build/Headroom.app
 #   make install    install to /Applications, link the CLI and man page, restart the app
 #   make icon       regenerate assets/AppIcon.icns from assets/icon.svg
-#   make screenshots  render every UI state from fixtures into media/ (README images)
+#   make screenshots  render the README images in media/ from fixtures (needs Google Chrome)
 #   make release    zip the signed app into dist/ with a SHA-256 checksum
 
 VERSION  := 0.1.0-beta.1
@@ -31,7 +31,7 @@ icon:
 	Scripts/make-icon.sh
 
 screenshots:
-	Scripts/screenshots.sh
+	python3 -I Scripts/readme_media.py
 
 release: app
 	rm -rf dist && mkdir -p dist

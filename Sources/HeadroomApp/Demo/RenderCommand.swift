@@ -40,6 +40,17 @@ enum RenderCommand {
                 }
             }
         }
+        if name == "all" || name == "statusitem" {
+            // The status item alone on a transparent background (3×), for marketing images.
+            let presenter = Presenter(now: now)
+            let items = presenter.menuBarItems([Demo.claudeMockup(now: now), Demo.codexMockup(now: now)], mode: .both, enabled: [.claude, .codex])
+            let size = NSSize(width: StatusItemRenderer.width(items), height: StatusItemRenderer.height)
+            for dark in [true, false] {
+                if let cg = StatusItemRenderer.renderBitmap(items, size: size, dark: dark, scale: 3) {
+                    write(NSBitmapImageRep(cgImage: cg), to: outDir.appendingPathComponent("statusitem-\(dark ? "dark" : "light").png")); written += 1
+                }
+            }
+        }
         if name == "all" || name == "menubar" {
             if let rep = PopoverPage.renderMenuBars(now: now) { write(rep, to: outDir.appendingPathComponent("menubar.png")); written += 1 }
         }
