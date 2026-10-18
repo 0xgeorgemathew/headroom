@@ -1,0 +1,1 @@
+{"_comment": "Synthetic: enterprise plan.", "id": 2, "result": {"account": {"type": "chatgpt", "email": "user@example.com", "planType": "enterprise"}, "requiresOpenaiAuth": true, "workspaceRouting": null}}

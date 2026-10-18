@@ -1,0 +1,9 @@
+{
+ "id": 1,
+ "result": {
+  "userAgent": "headroom/0.163.0 (redacted)",
+  "codexHome": "/Users/user/.codex",
+  "platformFamily": "unix",
+  "platformOs": "macos"
+ }
+}

@@ -1,0 +1,24 @@
+{"_comment": "Synthetic: a ChatGPT Plus/Pro response built from codex 0.163.0 generate-json-schema (GetAccountRateLimitsResponse). Not captured.",
+ "id": 3, "result": {
+ "ordinaryUsageAllowed": true,
+ "rateLimits": {"limitId": "codex", "limitName": null, "normalModelSlug": null,
+   "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1792504200},
+   "secondary": {"usedPercent": 41, "windowDurationMins": 10080, "resetsAt": 1792846800},
+   "credits": {"hasCredits": false, "unlimited": false, "balance": null},
+   "individualLimit": null, "spendControlReached": false, "planType": "pro", "rateLimitReachedType": null},
+ "rateLimitsByLimitId": {
+   "codex": {"limitId": "codex", "limitName": null, "normalModelSlug": null,
+     "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1792504200},
+     "secondary": {"usedPercent": 41, "windowDurationMins": 10080, "resetsAt": 1792846800},
+     "credits": null, "individualLimit": null, "spendControlReached": null, "planType": "pro", "rateLimitReachedType": null},
+   "codex_astra": {"limitId": "codex_astra", "limitName": "GPT-6 Astra", "normalModelSlug": "gpt-6-astra",
+     "primary": null,
+     "secondary": {"usedPercent": 100, "windowDurationMins": 10080, "resetsAt": 1792760400},
+     "credits": null, "individualLimit": null, "spendControlReached": null, "planType": "pro", "rateLimitReachedType": "rate_limit_reached"}
+ },
+ "rateLimitResetCredits": {"availableCount": 3, "credits": [
+   {"id": "rc_1", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1790000000, "expiresAt": 1792900000, "title": "Weekly limit reset", "description": null},
+   {"id": "rc_2", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1790500000, "expiresAt": 1795000000, "title": "Weekly limit reset", "description": null},
+   {"id": "rc_3", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1791000000, "expiresAt": null, "title": null, "description": null}]},
+ "accountId": "acct-redacted",
+ "rateLimitUpsell": null}}

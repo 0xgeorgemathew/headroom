@@ -1,0 +1,6 @@
+You are currently using your subscription to power your Claude Code usage
+
+Current session: 84% used · resets Oct 20 at 12:30pm (Asia/Calcutta)
+Current week (all models): 18% used · resets Oct 21 at 6am (Asia/Calcutta)
+Current week (Sonnet only): 4% used · resets Oct 21 at 6am (Asia/Calcutta)
+Current week (Fable): 62% used · resets Oct 23 at 10am (Asia/Calcutta)

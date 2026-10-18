@@ -1,0 +1,73 @@
+{
+ "five_hour": {
+  "utilization": 50.0,
+  "resets_at": "2026-10-18T04:39:59.953454+00:00",
+  "limit_dollars": null,
+  "used_dollars": null,
+  "remaining_dollars": null,
+  "locked_reason": null
+ },
+ "seven_day": null,
+ "seven_day_oauth_apps": null,
+ "seven_day_opus": null,
+ "seven_day_sonnet": null,
+ "seven_day_cowork": null,
+ "seven_day_omelette": null,
+ "tangelo": null,
+ "iguana_necktie": null,
+ "omelette_promotional": null,
+ "nimbus_quill": null,
+ "cinder_cove": null,
+ "copper_kite": null,
+ "brass_thimble": null,
+ "harbor_lantern": null,
+ "wattle_ember": null,
+ "amber_ladder": null,
+ "granite_teacup": null,
+ "amber_cistern": null,
+ "juniper_tide": null,
+ "cedar_ember": {
+  "eligible": false,
+  "ineligible_reason": "surface",
+  "at_limit": false,
+  "exhausted": [],
+  "grants": [],
+  "next_grant_id": null,
+  "weekly_resets_at": null,
+  "cooldown_until": null,
+  "event_props": null
+ },
+ "starry_waterfall": null,
+ "amber_gauge": null,
+ "extra_usage": null,
+ "limits": [
+  {
+   "kind": "session",
+   "group": "session",
+   "percent": 50,
+   "severity": "normal",
+   "resets_at": "2026-10-18T04:39:59.953454+00:00",
+   "scope": null,
+   "is_active": true
+  },
+  {
+   "kind": "weekly_scoped",
+   "group": "weekly",
+   "percent": 0,
+   "severity": "normal",
+   "resets_at": "2026-10-22T17:00:00+00:00",
+   "scope": {
+    "model": {
+     "id": null,
+     "display_name": "Fable"
+    },
+    "surface": null
+   },
+   "is_active": false
+  }
+ ],
+ "spend": null,
+ "member_dashboard_available": false,
+ "seven_day_breakdown": null,
+ "weekly_scoped_shares": null
+}

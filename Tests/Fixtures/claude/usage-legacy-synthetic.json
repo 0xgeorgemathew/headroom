@@ -1,0 +1,7 @@
+{
+ "_comment": "Synthetic: older response with only legacy keys (no limits[]), Pro plan.",
+ "five_hour": {"utilization": 100.0, "resets_at": "2026-10-20T07:00:00+00:00"},
+ "seven_day": {"utilization": 71.5, "resets_at": "2026-10-22T16:00:00+00:00"},
+ "seven_day_opus": {"utilization": 100.0, "resets_at": "2026-10-22T16:00:00+00:00"},
+ "seven_day_sonnet": null
+}
