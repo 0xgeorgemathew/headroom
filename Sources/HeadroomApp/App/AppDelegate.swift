@@ -39,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if args.contains("--open-settings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showSettings() }
+        }
         if args.contains("--register-login-item") {
             try? SMAppService.mainApp.register()
         }

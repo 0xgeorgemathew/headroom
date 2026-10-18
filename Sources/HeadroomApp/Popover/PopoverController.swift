@@ -39,7 +39,13 @@ final class PopoverController: NSObject {
         // ~190 MB shader archive on open (measured: 163–171 MB peaks vs 35 MB drawn), which breaks
         // the popover memory budget (PLAN §4.4).
         let root = PopoverRootView(model: model, controller: self)
-        panel.contentView = root
+        // A plain container: a layer-backed `updateLayer` view as the content view itself leaves
+        // the window without a server-side surface (AppKit reports it visible; nothing appears).
+        let container = NSView(frame: panel.contentRect(forFrameRect: panel.frame))
+        root.frame = container.bounds
+        root.autoresizingMask = [.width, .height]
+        container.addSubview(root)
+        panel.contentView = container
         self.panel = panel
         self.root = root
         model.popoverOpen = true

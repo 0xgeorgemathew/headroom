@@ -284,7 +284,8 @@ final class AppModel {
         Task {
             let t0 = Date()
             let outcome: ProviderReadOutcome = p == .claude ? await claude.read(popoverOpen: popover) : await codex.read()
-            diag.notice("read \(p.rawValue, privacy: .public) \(outcome.fault == nil ? "ok" : outcome.fault!.code, privacy: .public) \(Date().timeIntervalSince(t0), format: .fixed(precision: 2))s")
+            let faultText: String = outcome.fault.map { f in if case .failed(let r) = f { return "error: " + r }; return f.code } ?? "ok"
+            diag.notice("read \(p.rawValue, privacy: .public) \(faultText, privacy: .public) \(Date().timeIntervalSince(t0), format: .fixed(precision: 2))s")
             inFlight.remove(p)
             let now = Date()
             var machine = faults[p] ?? FaultMachine(provider: p)
