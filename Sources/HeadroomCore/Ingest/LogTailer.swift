@@ -281,7 +281,7 @@ public actor LogIngestor {
         self.now = now
         if let state, state.version == 1 {
             cursors = state.cursors
-            ledger = UsageLedger(entries: LedgerCodec.decode(state.ledger), models: state.models,
+            ledger = UsageLedger(table: LedgerCodec.decodeTable(state.ledger), models: state.models,
                                  projects: state.projects, files: state.files)
             passiveLatest = state.passiveLatest
             passiveTrusted = state.passiveTrusted
@@ -308,11 +308,28 @@ public actor LogIngestor {
         s.models = ledger.buckets.models
         s.projects = ledger.buckets.projects
         s.files = ledger.files
-        s.ledger = LedgerCodec.encode(Array(ledger.entries.values))
+        s.ledger = LedgerCodec.encode(ledger.entries)
         s.passiveLatest = passiveLatest
         s.passiveTrusted = passiveTrusted
         return s
     }
+
+    /// Moves the ledger into a read-only memory-mapped file (written here, atomically), so the
+    /// resident app keeps only recent changes in memory. Safe to call again after each save.
+    @discardableResult
+    public func mapLedger(file url: URL) -> Bool {
+        let data = LedgerCodec.encode(ledger.entries)
+        let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).tmp")
+        do { try data.write(to: tmp) } catch { return false }
+        guard rename(tmp.path, url.path) == 0, let table = ContributionTable(mappedFile: url), table.count == ledger.entries.count else {
+            try? FileManager.default.removeItem(at: tmp)
+            return false
+        }
+        ledger.entries = table
+        return true
+    }
+
+    public var ledgerIsMapped: Bool { ledger.entries.isMapped }
 
     public func reprice(_ pricer: @escaping EventPricer) {
         self.pricer = pricer

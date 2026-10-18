@@ -8,9 +8,20 @@ enum Glyph {
             .scaledBy(x: rect.width / viewBox.width, y: rect.height / viewBox.height)
     }
 
+    nonisolated(unsafe) private static var parsed: [String: CGPath] = [:]
+    private static let lock = NSLock()
+
+    /// Parsed once per path string, then transformed into place.
     private static func svg(_ d: String, _ rect: CGRect, _ vb: CGSize) -> CGPath {
         var t = transform(rect, viewBox: vb)
-        return SVGPath.parse(d).copy(using: &t) ?? CGMutablePath()
+        lock.lock()
+        let base = parsed[d] ?? {
+            let p = SVGPath.parse(d)
+            parsed[d] = p
+            return p
+        }()
+        lock.unlock()
+        return base.copy(using: &t) ?? CGMutablePath()
     }
 
     /// Hourglass, 14×20 viewBox (rect height h, width 0.7h).

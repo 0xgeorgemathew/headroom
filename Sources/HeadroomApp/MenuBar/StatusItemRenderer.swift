@@ -67,28 +67,75 @@ enum StatusItemRenderer {
     static func groupWidth(_ m: MenuBarProviderModel) -> CGFloat {
         var w: CGFloat = 14 + 5 + meterWidth
         if m.hourglass && m.blockedCountdown == nil { w += 5 + 7 }
-        if let b = m.blockedCountdown { w += 5 + 7 + 3 + countdownText(b, color: .black).width }
-        else if let s = m.session { w += 5 + 3 + 11 + 3 + countdownText(s.countdown, color: .black).width }
+        if let b = m.blockedCountdown { w += 5 + 7 + 3 + slotWidth(b) }
+        else if let s = m.session { w += 5 + 3 + 11 + 3 + slotWidth(s.countdown) }
         if m.fault { w += 4 + 9 }
         return ceil(w)
     }
 
     static func countdownText(_ s: String, color: NSColor) -> Text { Text(s, F.sf(11.5, 650, tabular: true), color) }
 
+    /// Countdown slots are sized for their widest form ("88m", "8:88", "88h") so the item's
+    /// width doesn't change every minute (a width change relayouts the menu bar).
+    static func slotWidth(_ s: String) -> CGFloat {
+        let widest = s.contains(":") ? String(repeating: "8", count: max(s.count - 3, 1)) + ":88" : String(repeating: "8", count: max(s.count - 1, 2)) + String(s.last ?? "m")
+        return max(countdownText(s, color: .black).width, countdownText(widest, color: .black).width)
+    }
+
     // MARK: Image
 
     /// A non-template image that redraws itself for the current menu bar appearance.
+    ///
+    /// The glows are CG shadows. Drawn straight into the status bar's layer, CoreAnimation renders
+    /// them on its accelerated path, which maps a ~190 MB Metal shader archive into the process.
+    /// So the meter is rendered on the CPU into a bitmap (cached per appearance and scale) and the
+    /// handler only blits it.
     static func image(_ items: [MenuBarProviderModel]) -> NSImage {
         let size = NSSize(width: width(items), height: height)
+        let cache = BitmapCache()
         let image = NSImage(size: size, flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             let dark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            draw(items, in: rect, dark: dark, ctx: ctx)
+            let scale = max(1, (ctx.userSpaceToDeviceSpaceTransform.a).rounded())
+            let key = (dark ? 1 : 0) * 10 + Int(scale)
+            let bitmap = cache.images[key] ?? {
+                let img = renderBitmap(items, size: size, dark: dark, scale: scale)
+                cache.images[key] = img
+                return img
+            }()
+            guard let bitmap else { return false }
+            ctx.saveGState()
+            // Flipped handler: undo the flip so the CGImage lands upright.
+            ctx.translateBy(x: 0, y: rect.height)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(bitmap, in: CGRect(origin: .zero, size: rect.size))
+            ctx.restoreGState()
             return true
         }
         image.isTemplate = false
         image.accessibilityDescription = items.map(\.spoken).joined(separator: " ")
         return image
+    }
+
+    final class BitmapCache: @unchecked Sendable {
+        var images: [Int: CGImage] = [:]
+    }
+
+    /// CPU rendering into a premultiplied sRGB bitmap.
+    static func renderBitmap(_ items: [MenuBarProviderModel], size: NSSize, dark: Bool, scale: CGFloat) -> CGImage? {
+        let w = Int((size.width * scale).rounded(.up)), h = Int((size.height * scale).rounded(.up))
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: 0, y: size.height)
+        ctx.scaleBy(x: 1, y: -1)
+        let gc = NSGraphicsContext(cgContext: ctx, flipped: true)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = gc
+        draw(items, in: CGRect(origin: .zero, size: size), dark: dark, ctx: ctx)
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()
     }
 
     static func draw(_ items: [MenuBarProviderModel], in rect: CGRect, dark: Bool, ctx: CGContext) {

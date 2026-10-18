@@ -234,6 +234,17 @@ struct UsageLedger: Sendable {
 
     init() {}
 
+    init(table: ContributionTable, models: [String], projects: [String], files: [String]) {
+        buckets.models = models
+        buckets.projects = projects
+        self.files = files
+        for (i, m) in models.enumerated() { modelIndex[m] = UInt16(i) }
+        for (i, p) in projects.enumerated() { projectIndex[p] = UInt16(i) }
+        for (i, f) in files.enumerated() { fileIndex[f] = UInt32(i) }
+        self.entries = table
+        table.forEachPacked { apply($0.contribution, sign: 1) }
+    }
+
     init(entries: [Contribution], models: [String], projects: [String], files: [String]) {
         buckets.models = models
         buckets.projects = projects

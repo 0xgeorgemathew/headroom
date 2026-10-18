@@ -25,7 +25,7 @@ extension Demo {
                         let cost = pricing.price(tokens: tokens, model: model)
                         out.append(HourAggregate(provider: p, hour: hour, model: model, project: projects[(i + j) % projects.count],
                                                  tokens: tokens, micros: cost.micros, priced: cost.priced,
-                                                 classMicros: [cost.input, cost.cacheWrite, cost.cacheRead, cost.output]))
+                                                 classMicros: ClassMicros(input: cost.input, cacheWrite: cost.cacheWrite, cacheRead: cost.cacheRead, output: cost.output)))
                     }
                 }
             }

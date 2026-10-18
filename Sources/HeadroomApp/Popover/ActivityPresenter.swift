@@ -10,8 +10,13 @@ struct HourAggregate: Sendable, Hashable {
     var tokens: TokenCounts
     var micros: Int64
     var priced: Bool
-    /// Micro-dollars by token class: input, cache write, cache read, output.
-    var classMicros: [Int64] = []
+    /// Micro-dollars by token class (no heap allocation per aggregate).
+    var classMicros: ClassMicros = .init()
+}
+
+struct ClassMicros: Sendable, Hashable {
+    var input: Int64 = 0, cacheWrite: Int64 = 0, cacheRead: Int64 = 0, output: Int64 = 0
+    var isEmpty: Bool { input == 0 && cacheWrite == 0 && cacheRead == 0 && output == 0 }
 }
 
 /// Builds Activity cards from hourly aggregates for a range and a selection.
@@ -111,9 +116,9 @@ struct ActivityPresenter {
     private func classRows(_ items: [HourAggregate], total: Int64) -> [BreakdownRow] {
         var input: Double = 0, write: Double = 0, read: Double = 0, output: Double = 0
         for a in items where a.micros > 0 {
-            if a.classMicros.count == 4 {
-                input += Double(a.classMicros[0]); write += Double(a.classMicros[1])
-                read += Double(a.classMicros[2]); output += Double(a.classMicros[3])
+            if !a.classMicros.isEmpty {
+                input += Double(a.classMicros.input); write += Double(a.classMicros.cacheWrite)
+                read += Double(a.classMicros.cacheRead); output += Double(a.classMicros.output)
                 continue
             }
             guard let c = pricing?.price(tokens: a.tokens, model: a.model), c.micros > 0 else { continue }
@@ -141,10 +146,7 @@ struct ActivityPresenter {
     // MARK: Labels
 
     private func formatter(_ template: String) -> DateFormatter {
-        let f = DateFormatter()
-        f.calendar = calendar; f.locale = locale; f.timeZone = calendar.timeZone
-        f.setLocalizedDateFormatFromTemplate(template)
-        return f
+        Formatters.template(template, calendar: calendar, locale: locale)
     }
 
     private func clean(_ s: String) -> String { s.replacingOccurrences(of: "\u{202F}", with: " ") }

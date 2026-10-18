@@ -34,27 +34,22 @@ final class PopoverController: NSObject {
         panel.acceptsMouseMovedEvents = true
         panel.animationBehavior = .utilityWindow
 
-        let glass = NSGlassEffectView()
-        glass.cornerRadius = PopoverChrome.radius
-        glass.style = .regular
+        // The surface is drawn by PopoverRootView (the mockup's opaque window with a top sheen).
+        // NSGlassEffectView and NSVisualEffectView both render in-process with Metal and map a
+        // ~190 MB shader archive on open (measured: 163–171 MB peaks vs 35 MB drawn), which breaks
+        // the popover memory budget (PLAN §4.4).
         let root = PopoverRootView(model: model, controller: self)
-        glass.contentView = root
-        panel.contentView = glass
+        panel.contentView = root
         self.panel = panel
         self.root = root
         model.popoverOpen = true
         root.rebuild(animated: false)
-        applyTint(glass)
 
         let buttonRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         position(panel, under: buttonRect, height: root.preferredHeight)
         panel.makeKeyAndOrderFront(nil)
+        panel.invalidateShadow()
         installMonitors()
-    }
-
-    func applyTint(_ glass: NSGlassEffectView) {
-        let theme = Theme.current(for: glass.effectiveAppearance)
-        glass.tintColor = theme.windowFill.withAlphaComponent(theme.isDark ? 0.86 : 0.82)
     }
 
     private func position(_ panel: NSPanel, under buttonRect: NSRect, height: CGFloat) {
@@ -88,6 +83,8 @@ final class PopoverController: NSObject {
         panel = nil
         root = nil
         model.popoverOpen = false
+        // Give back the drawing buffers now and again once AppKit has torn the panel down.
+        Memory.relieve()
     }
 
     /// Called when the model changed.
@@ -117,7 +114,6 @@ final class PopoverPanel: NSPanel {
 final class PopoverRootView: NSView, NSViewToolTipOwner {
     let model: AppModel
     weak var controller: PopoverController?
-    private let scroll = NSScrollView()
     private let cards: CardsView
     private var out = RenderOutput()
     var tab: Int { didSet { model.settings.lastTab = tab } }
@@ -129,15 +125,12 @@ final class PopoverRootView: NSView, NSViewToolTipOwner {
         cards = CardsView(model: model)
         super.init(frame: NSRect(x: 0, y: 0, width: PopoverChrome.width, height: 400))
         cards.root = self
-        scroll.drawsBackground = false
-        scroll.hasVerticalScroller = true
-        scroll.scrollerStyle = .overlay
-        scroll.autohidesScrollers = true
-        scroll.verticalScrollElasticity = .allowed
-        scroll.documentView = cards
-        scroll.contentView.drawsBackground = false
-        addSubview(scroll)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        addSubview(cards)
     }
+
+    override var wantsUpdateLayer: Bool { true }
 
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
@@ -153,34 +146,38 @@ final class PopoverRootView: NSView, NSViewToolTipOwner {
         cards.tab = tab
         cards.rebuild(animated: animated)
         controller?.resize(to: preferredHeight)
-        layoutScroll()
+        layoutCards()
         needsDisplay = true
     }
 
     override func layout() {
         super.layout()
-        layoutScroll()
+        layoutCards()
     }
 
-    private func layoutScroll() {
+    /// The card view is only as tall as the visible area and scrolls itself, so no tall backing
+    /// store exists (a tall one gets GPU tiling, which maps CoreAnimation's Metal archive).
+    private func layoutCards() {
         let h = max(bounds.height - topHeight - bottomHeight, 40)
-        scroll.frame = NSRect(x: 0, y: topHeight, width: bounds.width, height: h)
-        cards.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(cards.contentHeight, h))
+        cards.frame = NSRect(x: 0, y: topHeight, width: bounds.width, height: h)
+        cards.clampOffset()
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        if let glass = superview as? NSGlassEffectView { controller?.applyTint(glass) }
         needsDisplay = true
         cards.needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    override func updateLayer() {
+        CPUCanvas.update(self) { ctx in self.drawContent(ctx) }
+        for r in out.regions where r.tooltip != nil { addToolTip(r.rect, owner: self, userData: nil) }
+    }
+
+    private func drawContent(_ ctx: CGContext) {
         let t = theme
-        out = RenderOutput()
         removeAllToolTips()
-        PopoverChrome.drawWindow(bounds, theme: t, ctx: ctx, opaque: false)
+        PopoverChrome.drawWindow(bounds, theme: t, ctx: ctx, opaque: true)
         let pad = PopoverChrome.pad, cw = bounds.width - pad * 2
         if let week = cards.historyWeek {
             PopoverChrome.drawHeader(x: pad, y: pad, width: cw, title: "Headroom", tabs: ["Back"], selected: -1, theme: t, ctx: ctx, out: out)
@@ -197,7 +194,6 @@ final class PopoverRootView: NSView, NSViewToolTipOwner {
             ranges.draw(in: CGRect(x: pad + cw - 1 - ranges.width, y: y, width: ranges.width, height: 26), theme: t, ctx: ctx, out: out) { .activityRange($0) }
         }
         PopoverChrome.drawFooter(model.footer, x: pad, y: bounds.height - bottomHeight, width: cw, theme: t, ctx: ctx, out: out)
-        for r in out.regions where r.tooltip != nil { addToolTip(r.rect, owner: self, userData: nil) }
     }
 
     func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
@@ -236,7 +232,9 @@ final class PopoverRootView: NSView, NSViewToolTipOwner {
 final class CardsView: NSView, NSViewToolTipOwner {
     let model: AppModel
     weak var root: PopoverRootView?
-    var tab = 0
+    var tab = 0 { didSet { if tab != oldValue { offset = 0 } } }
+    /// Scroll position within the card stack.
+    private(set) var offset: CGFloat = 0
     /// Selected bar range for the Activity span (shared by both providers).
     var selection: Range<Int>?
     var historyWeek: (provider: Provider, index: Int)?
@@ -261,6 +259,7 @@ final class CardsView: NSView, NSViewToolTipOwner {
 
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
     var theme: Theme { Theme.current(for: effectiveAppearance) }
 
     func rebuild(animated: Bool) {
@@ -275,15 +274,35 @@ final class CardsView: NSView, NSViewToolTipOwner {
             activityCards = model.settings.enabledProviders.sorted().map { ap.card($0, aggregates: aggregates, range: range, selection: selection) }
             weeks = model.settings.enabledProviders.sorted().map { pastWeeks($0, presenter: presenter) }
         }
+        if animated, states != lastStates, !lastStates.isEmpty, window != nil { beginFade() }
         contentHeight = measure()
-        if animated, states != lastStates, let layer {
-            let fade = CATransition()
-            fade.type = .fade
-            fade.duration = 0.15
-            layer.add(fade, forKey: "stateFade")
-        }
         lastStates = states
         needsDisplay = true
+    }
+
+    // MARK: State cross-fade (PLAN §3.4: 150 ms when the state changes), drawn on the CPU.
+
+    private var fade: (image: CGImage, rect: NSRect, start: Date)?
+    private var fadeTimer: Timer?
+
+    private func beginFade() {
+        let rect = bounds.integral
+        guard let image = CPUCanvas.image(for: self, rect: rect, { ctx in
+            ctx.translateBy(x: 0, y: -self.offset)
+            _ = self.layout(ctx: ctx, width: self.bounds.width)
+        }) else { return }
+        fade = (image, rect, Date())
+        fadeTimer?.invalidate()
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let f = self.fade else { return }
+                if Date().timeIntervalSince(f.start) >= 0.15 { self.fade = nil; self.fadeTimer?.invalidate(); self.fadeTimer = nil }
+                _ = f
+                self.needsDisplay = true
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        fadeTimer = t
     }
 
     private func pastWeeks(_ p: Provider, presenter: Presenter) -> PastWeeksModel {
@@ -377,11 +396,26 @@ final class CardsView: NSView, NSViewToolTipOwner {
         return y + 2
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+    override func updateLayer() {
         out = RenderOutput()
         removeAllToolTips()
-        layout(ctx: ctx, width: bounds.width)
+        let fadeAlpha = fade.map { 1 - min(1, Date().timeIntervalSince($0.start) / 0.15) }
+        CPUCanvas.update(self) { ctx in
+            ctx.saveGState()
+            ctx.translateBy(x: 0, y: -self.offset)
+            self.layout(ctx: ctx, width: self.bounds.width)
+            ctx.restoreGState()
+            if let f = self.fade, let a = fadeAlpha {
+                ctx.saveGState()
+                ctx.setAlpha(a)
+                ctx.translateBy(x: f.rect.minX, y: f.rect.maxY)
+                ctx.scaleBy(x: 1, y: -1)
+                ctx.draw(f.image, in: CGRect(origin: .zero, size: f.rect.size))
+                ctx.restoreGState()
+            }
+        }
+        // Regions were recorded in content coordinates; move them into view coordinates.
+        out.regions = out.regions.map { var r = $0; r.rect = r.rect.offsetBy(dx: 0, dy: -offset); return r }
         for r in out.regions where r.tooltip != nil { addToolTip(r.rect, owner: self, userData: nil) }
     }
 
@@ -396,6 +430,22 @@ final class CardsView: NSView, NSViewToolTipOwner {
 
     // MARK: Mouse
 
+    func clampOffset() {
+        let maxOffset = max(0, contentHeight - bounds.height)
+        offset = min(max(offset, 0), maxOffset)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10
+        let before = offset
+        offset -= dy
+        clampOffset()
+        if offset != before { needsDisplay = true }
+    }
+
+    /// View point → content point.
+    private func content(_ p: NSPoint) -> NSPoint { NSPoint(x: p.x, y: p.y + offset) }
+
     private func barIndex(_ p: NSPoint, provider: Provider) -> Int? {
         guard let l = chartLayouts[provider], l.barCount > 0, l.chartRect.insetBy(dx: 0, dy: -6).contains(p) else { return nil }
         return min(max(Int((p.x - l.chartRect.minX) / l.barWidth), 0), l.barCount - 1)
@@ -404,10 +454,11 @@ final class CardsView: NSView, NSViewToolTipOwner {
     private func provider(at p: NSPoint) -> Provider? { cardRects.first { $0.1.contains(p) }?.0 }
 
     override func mouseDown(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
-        if let region = out.regions.last(where: { $0.rect.contains(p) && $0.action != .none }) {
+        let v = convert(event.locationInWindow, from: nil)
+        let p = content(v)
+        if let region = out.regions.last(where: { $0.rect.contains(v) && $0.action != .none }) {
             switch region.action {
-            case .breakdownMenu: showBreakdownMenu(at: p); return
+            case .breakdownMenu: showBreakdownMenu(at: v); return
             case .openWeek(let prov, let i):
                 historyWeek = (prov, i)
                 root?.rebuild(animated: false)
@@ -432,7 +483,7 @@ final class CardsView: NSView, NSViewToolTipOwner {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        let p = convert(event.locationInWindow, from: nil)
+        let p = content(convert(event.locationInWindow, from: nil))
         guard tab == 1, let anchor = dragAnchor else { return }
         let prov = provider(at: p) ?? chartLayouts.keys.sorted().first!
         guard let l = chartLayouts[prov], l.barCount > 0 else { return }
@@ -466,7 +517,7 @@ final class CardsView: NSView, NSViewToolTipOwner {
     // MARK: Share menu (right-click)
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        let p = convert(event.locationInWindow, from: nil)
+        let p = content(convert(event.locationInWindow, from: nil))
         guard let prov = provider(at: p) else { return nil }
         let menu = NSMenu()
         for (title, sel) in [("Copy Card", #selector(copyCard(_:))), ("Copy Snapshot", #selector(copySnapshot(_:))), ("Copy as Text", #selector(copyText(_:)))] {

@@ -49,14 +49,13 @@ struct TextBlock {
         string = NSAttributedString(string: s, attributes: attributes)
         self.width = width
         self.lineHeight = lineHeight
-    }
-
-    private var lines: [CTLine] {
         let setter = CTFramesetterCreateWithAttributedString(string)
         let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 10_000), transform: nil)
         let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), path, nil)
-        return (CTFrameGetLines(frame) as? [CTLine]) ?? []
+        lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
     }
+
+    private let lines: [CTLine]
 
     var height: CGFloat { CGFloat(max(lines.count, 1)) * lineHeight }
 
@@ -243,4 +242,45 @@ func renderImage(size: CGSize, scale: CGFloat = 2, appearance: NSAppearance? = n
     if let appearance { appearance.performAsCurrentDrawingAppearance(work) } else { work() }
     NSGraphicsContext.restoreGraphicsState()
     return rep
+}
+
+/// Renders a view's content on the CPU into a bitmap and hands it to the view's layer as contents.
+///
+/// When AppKit draws a view through `draw(_:)`, CoreAnimation may promote frequently redrawn
+/// content to its accelerated CG renderer, which maps a ~190 MB Metal shader archive into the
+/// process (measured: 135–171 MB peaks). Layer contents set from a finished CGImage are only
+/// composited, so all popover views render through here.
+@MainActor
+enum CPUCanvas {
+    static func image(for view: NSView, rect: NSRect? = nil, _ body: (CGContext) -> Void) -> CGImage? {
+        let scale = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let r = (rect ?? view.bounds).integral
+        let w = Int(r.width * scale), h = Int(r.height * scale)
+        guard w > 0, h > 0, let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: 0, y: r.height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.translateBy(x: -r.minX, y: -r.minY)
+        let gc = NSGraphicsContext(cgContext: ctx, flipped: true)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = gc
+        view.effectiveAppearance.performAsCurrentDrawingAppearance { body(ctx) }
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()
+    }
+
+    /// Sets the rendered image as the view's layer contents (call from `updateLayer`).
+    static func update(_ view: NSView, _ body: (CGContext) -> Void) {
+        guard let layer = view.layer else { return }
+        let image = Self.image(for: view, body)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contents = image
+        layer.contentsScale = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        layer.contentsGravity = .topLeft
+        CATransaction.commit()
+    }
 }

@@ -32,27 +32,45 @@ enum ScanChild {
         return status
     }
 
-    /// Parent side: hands the current state to a child, waits, and returns the scanned state.
-    static func scan(current: IngestState) async -> IngestState? {
+    /// Parent side: the child scans from `stateURL` and writes the result back to it atomically.
+    /// Returns the scanned state (decoded once, here).
+    static func scan(stateURL: URL) async -> IngestState? {
         guard let exe = Bundle.main.executableURL else { return nil }
-        let dir = PlistStore<IngestState>.standardDirectory()
+        let dir = stateURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let input = dir.appendingPathComponent(".scan-in.plist"), output = dir.appendingPathComponent(".scan-out.plist")
-        defer {
-            try? FileManager.default.removeItem(at: input)
-            try? FileManager.default.removeItem(at: output)
-        }
-        do { try PlistStore<IngestState>(url: input).save(current) } catch { return nil }
+        let output = dir.appendingPathComponent(".scan-out.plist")
         try? FileManager.default.removeItem(at: output)
         let process = Process()
         process.executableURL = exe
-        process.arguments = ["--scan-logs", input.path, output.path]
+        process.arguments = ["--scan-logs", stateURL.path, output.path]
         process.qualityOfService = .utility
         let ok: Bool = await withCheckedContinuation { cont in
             process.terminationHandler = { p in cont.resume(returning: p.terminationStatus == 0) }
             do { try process.run() } catch { cont.resume(returning: false) }
         }
-        guard ok else { return nil }
-        return PlistStore<IngestState>(url: output).load()
+        guard ok, let state = PlistStore<IngestState>(url: output).load() else {
+            try? FileManager.default.removeItem(at: output)
+            return nil
+        }
+        _ = rename(output.path, stateURL.path)
+        return state
+    }
+}
+
+/// Returns freed malloc pages (including malloc's cache of freed large blocks) to the system
+/// after large transient work: now, and again once autoreleased buffers have gone.
+enum Memory {
+    nonisolated(unsafe) private static var pending = false
+
+    static func relieve() {
+        malloc_zone_pressure_relief(nil, 0)
+        DispatchQueue.main.async {
+            guard !pending else { return }
+            pending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                pending = false
+                malloc_zone_pressure_relief(nil, 0)
+            }
+        }
     }
 }

@@ -16,14 +16,29 @@ enum F {
         }
     }
 
+    /// Fonts are cached: each new NSFont instance carries its own CoreText glyph caches, and the
+    /// popover draws hundreds of runs per pass.
+    nonisolated(unsafe) private static var cache: [Int: NSFont] = [:]
+    private static let lock = NSLock()
+
+    private static func cached(_ key: Int, _ make: () -> NSFont) -> NSFont {
+        lock.lock(); defer { lock.unlock() }
+        if let f = cache[key] { return f }
+        let f = make()
+        cache[key] = f
+        return f
+    }
+
     /// SF Pro (the system font picks Text or Display optics by size).
     static func sf(_ size: CGFloat, _ css: Int = 400, tabular: Bool = false) -> NSFont {
-        let base = NSFont.systemFont(ofSize: size, weight: weight(css))
-        return tabular ? base.tabular : base
+        cached(Int(size * 100) * 10_000 + css * 10 + (tabular ? 1 : 0)) {
+            let base = NSFont.systemFont(ofSize: size, weight: weight(css))
+            return tabular ? base.tabular : base
+        }
     }
 
     static func mono(_ size: CGFloat, _ css: Int = 400) -> NSFont {
-        NSFont.monospacedSystemFont(ofSize: size, weight: weight(css))
+        cached(-(Int(size * 100) * 10_000 + css * 10)) { NSFont.monospacedSystemFont(ofSize: size, weight: weight(css)) }
     }
 }
 
@@ -96,6 +111,25 @@ struct Text {
 }
 
 // MARK: - Geometry
+
+/// Shared date formatters by locale + template (DateFormatter is expensive to create).
+enum Formatters {
+    nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+    private static let lock = NSLock()
+
+    static func template(_ template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
+        let key = "\(template)|\(locale.identifier)|\(calendar.timeZone.identifier)|\(calendar.identifier)"
+        lock.lock(); defer { lock.unlock() }
+        if let f = cache[key] { return f }
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.locale = locale
+        f.timeZone = calendar.timeZone
+        f.setLocalizedDateFormatFromTemplate(template)
+        cache[key] = f
+        return f
+    }
+}
 
 extension CGRect {
     func inset(_ d: CGFloat) -> CGRect { insetBy(dx: d, dy: d) }

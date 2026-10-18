@@ -204,21 +204,11 @@ enum GlideChartRenderer {
     }
 
     private static func weekdayAbbrev(_ date: Date, calendar: Calendar, locale: Locale) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.locale = locale
-        f.timeZone = calendar.timeZone
-        f.setLocalizedDateFormatFromTemplate("EEE")
-        return f.string(from: date).uppercased().replacingOccurrences(of: ".", with: "")
+        Formatters.template("EEE", calendar: calendar, locale: locale).string(from: date).uppercased().replacingOccurrences(of: ".", with: "")
     }
 
     private static func monthDayLabel(_ date: Date, calendar: Calendar, locale: Locale) -> String {
-        let f = DateFormatter()
-        f.calendar = calendar
-        f.locale = locale
-        f.timeZone = calendar.timeZone
-        f.setLocalizedDateFormatFromTemplate("MMMd")
-        return f.string(from: date).uppercased()
+        Formatters.template("MMMd", calendar: calendar, locale: locale).string(from: date).uppercased()
     }
 
     private static func drawOutlined(_ s: NSAttributedString, center: CGPoint, outline: NSColor, ctx: CGContext) {

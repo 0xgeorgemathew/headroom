@@ -9,6 +9,9 @@ final class StatusItemController: NSObject {
     private let popover: PopoverController
     var openSettings: (() -> Void)?
     private var lastKey: [MenuBarProviderModel]?
+    private var lastAppearanceDark: Bool?
+    private var lastScale: CGFloat = 0
+    private var appearanceObservation: NSKeyValueObservation?
 
     init(model: AppModel, popover: PopoverController) {
         self.model = model
@@ -20,20 +23,39 @@ final class StatusItemController: NSObject {
             button.action = #selector(clicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.imagePosition = .imageOnly
+            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.update(force: true) }
+            }
         }
         update()
     }
 
-    func update(now: Date = Date()) {
+    func update(now: Date = Date(), force: Bool = false) {
         let presenter = Presenter(now: now)
         let items = presenter.menuBarItems(model.paceInputs(), mode: model.settings.menuBarMode,
                                            enabled: model.settings.enabledProviders, majorOutage: model.majorOutages)
-        guard items != lastKey, let button = item.button else { return }
+        guard let button = item.button else { return }
+        let dark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let scale = button.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        guard force || items != lastKey || dark != lastAppearanceDark || scale != lastScale else { return }
         lastKey = items
-        button.image = StatusItemRenderer.image(items)
+        lastAppearanceDark = dark
+        lastScale = scale
+        let size = NSSize(width: StatusItemRenderer.width(items), height: StatusItemRenderer.height)
+        // Touch the item only when something actually changed, and keep its width stable:
+        // every relayout makes AppKit re-render the status button.
+        if abs(item.length - (size.width + 8)) > 0.5 { item.length = size.width + 8 }
+        // A finished CPU-rendered bitmap; AppKit only composites it.
+        if let cg = StatusItemRenderer.renderBitmap(items, size: size, dark: dark, scale: scale) {
+            let image = NSImage(cgImage: cg, size: size)
+            image.isTemplate = false
+            button.image = image
+        }
         let spoken = items.map(\.spoken).joined(separator: " ")
-        button.setAccessibilityLabel(spoken.isEmpty ? "Headroom" : spoken)
-        button.toolTip = items.isEmpty ? "Headroom" : nil
+        let label = spoken.isEmpty ? "Headroom" : spoken
+        if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
+        let tip: String? = items.isEmpty ? "Headroom" : nil
+        if button.toolTip != tip { button.toolTip = tip }
     }
 
     @objc private func clicked(_ sender: NSStatusBarButton) {

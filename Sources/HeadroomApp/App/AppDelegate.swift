@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import HeadroomKit
 
 @MainActor
@@ -27,11 +28,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.start()
         // Test hook for measurements and screenshots: `open Headroom.app --args --open-popover [--tab 1]`.
         let args = ProcessInfo.processInfo.arguments
+        // Test hook: `--cycle-popover` opens for 10 s every 30 s (memory soak).
+        if args.contains("--cycle-popover") {
+            Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let button = self.statusItem.item.button else { return }
+                    self.settings.lastTab = (self.settings.lastTab + 1) % 2
+                    self.popover.show(relativeTo: button)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.popover.close() }
+                }
+            }
+        }
+        if args.contains("--register-login-item") {
+            try? SMAppService.mainApp.register()
+        }
         if args.contains("--open-popover") {
             if let i = args.firstIndex(of: "--tab"), i + 1 < args.count, let t = Int(args[i + 1]) { settings.lastTab = t }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            let delay = args.firstIndex(of: "--open-after").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil } ?? 3
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, let button = self.statusItem.item.button else { return }
                 self.popover.show(relativeTo: button)
+                if let i = args.firstIndex(of: "--close-after"), i + 1 < args.count, let secs = Double(args[i + 1]) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + secs) { self.popover.close() }
+                }
             }
         }
     }

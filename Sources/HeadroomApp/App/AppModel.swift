@@ -1,11 +1,15 @@
 import AppKit
 import HeadroomCore
 import HeadroomKit
+import os
 
-/// Persisted between launches (`state.plist`): cursors and buckets, history, last good readings.
+/// Diagnostics: counts and timings only (no paths, tokens or account data).
+let diag = Logger(subsystem: "com.headroom.app", category: "engine")
+
+/// Persisted between launches (`state.plist`): history and last good readings. The ingestion
+/// state (cursors, ledger) lives in `ingest.plist`, which the scan child reads and writes directly.
 struct PersistedState: Codable, Sendable {
-    var version = 1
-    var ingest: IngestState?
+    var version = 2
     var history = HistoryStore()
     var lastGood: [String: LimitReading] = [:]
     var claudeRefreshLastRun: Date?
@@ -29,6 +33,7 @@ final class AppModel {
     var onChange: (() -> Void)?
 
     private let store = PlistStore<PersistedState>.standard(named: "state.plist")
+    private let ingestStore = PlistStore<IngestState>.standard(named: "ingest.plist")
     private var saver: DebouncedSaver?
     private var ingestor: LogIngestor
     private var watcher: LogWatcher?
@@ -61,7 +66,8 @@ final class AppModel {
         pricing = PricingEngine.standard()
         pricingOverrideStamp = Self.overrideStamp()
         let engine = pricing
-        ingestor = LogIngestor(pricer: Self.pricer(engine), state: persisted.ingest)
+        // Empty until the first scan; the scan child loads `ingest.plist` itself (see `fullScan`).
+        ingestor = LogIngestor(pricer: Self.pricer(engine), state: nil)
         scheduler = AdaptiveScheduler(enabled: settings.enabledProviders, statusChecksEnabled: settings.statusChecks)
 
         let resolver = self.resolver
@@ -137,20 +143,41 @@ final class AppModel {
 
     /// Runs a full scan in a child process when possible (see `ScanChild`), in-process otherwise.
     private func fullScan() async {
-        let current = await ingestor.exportState()
-        if Bundle.main.bundleURL.pathExtension == "app", let scanned = await ScanChild.scan(current: current) {
+        let t0 = Date()
+        defer { diag.notice("full scan \(Date().timeIntervalSince(t0), format: .fixed(precision: 2))s") }
+        if firstScanDone { await saveIngest() } // hand the child our latest cursors
+        if Bundle.main.bundleURL.pathExtension == "app", let scanned = await ScanChild.scan(stateURL: ingestStore.url) {
             ingestor = LogIngestor(pricer: Self.pricer(pricing), state: scanned)
         } else {
+            if !firstScanDone, let saved = ingestStore.load() { ingestor = LogIngestor(pricer: Self.pricer(pricing), state: saved) }
             _ = await ingestor.scanAll()
+            await saveIngest()
         }
         buckets = await ingestor.buckets()
+        await mapLedger()
+    }
+
+    private var ledgerURL: URL { ingestStore.url.deletingLastPathComponent().appendingPathComponent("ledger.bin") }
+
+    /// Keeps the ledger file-backed so its pages don't count toward the resident footprint.
+    private func mapLedger() async {
+        await ingestor.mapLedger(file: ledgerURL)
+        Memory.relieve()
+    }
+
+    private func saveIngest() async {
+        let state = await ingestor.exportState()
+        try? ingestStore.save(state)
+        await mapLedger()
     }
 
     private func logsChanged(paths: [String], rescan: Bool) async {
         if rescan {
+            diag.notice("watcher asked for a rescan (\(paths.count) paths)")
             await fullScan()
         } else {
             let report = await ingestor.ingest(paths: paths)
+            diag.notice("ingest files=\(report.filesRead) bytes=\(report.bytesProcessed) events=\(report.eventsAdded) \(report.seconds, format: .fixed(precision: 3))s")
             guard report.eventsAdded > 0 else { return }
             buckets = await ingestor.buckets()
         }
@@ -183,13 +210,16 @@ final class AppModel {
     }
 
     func save() async {
+        let t0 = Date()
+        defer { diag.notice("saved state \(Date().timeIntervalSince(t0), format: .fixed(precision: 2))s") }
+        if firstScanDone { await saveIngest() }
         var state = PersistedState()
-        state.ingest = await ingestor.exportState()
         state.history = history
         for p in Provider.allCases { if let g = faults[p]?.lastGood { state.lastGood[p.rawValue] = g } }
         state.claudeRefreshLastRun = await refresher.lastRunDate
         state.codexAccountKey = codexAccountKey
         try? store.save(state)
+        Memory.relieve()
     }
 
     func flushOnQuit() async {
@@ -252,7 +282,9 @@ final class AppModel {
         inFlight.insert(p)
         let popover = popoverOpen
         Task {
+            let t0 = Date()
             let outcome: ProviderReadOutcome = p == .claude ? await claude.read(popoverOpen: popover) : await codex.read()
+            diag.notice("read \(p.rawValue, privacy: .public) \(outcome.fault == nil ? "ok" : outcome.fault!.code, privacy: .public) \(Date().timeIntervalSince(t0), format: .fixed(precision: 2))s")
             inFlight.remove(p)
             let now = Date()
             var machine = faults[p] ?? FaultMachine(provider: p)
@@ -297,6 +329,7 @@ final class AppModel {
         guard settings.statusChecks else { return }
         Task {
             let status = await statusClient.fetch(p)
+            diag.notice("status \(p.rawValue, privacy: .public) \(status?.level.rawValue ?? -1)")
             scheduler.recordStatusCheck(p, at: Date())
             if let status { serviceStatus[p] = status }
             faults[p]?.applyStatus(status)
@@ -408,7 +441,8 @@ final class AppModel {
             HourAggregate(provider: s.key.provider, hour: Date(timeIntervalSince1970: Double(s.key.slot) * Double(UsageBuckets.slotSeconds)),
                           model: s.model, project: s.project.isEmpty ? nil : s.project, tokens: s.totals.tokens,
                           micros: s.totals.micros, priced: s.totals.unpricedTokens == 0,
-                          classMicros: [s.totals.cost.input, s.totals.cost.cacheWrite, s.totals.cost.cacheRead, s.totals.cost.output])
+                          classMicros: ClassMicros(input: s.totals.cost.input, cacheWrite: s.totals.cost.cacheWrite,
+                                                    cacheRead: s.totals.cost.cacheRead, output: s.totals.cost.output))
         }
     }
 

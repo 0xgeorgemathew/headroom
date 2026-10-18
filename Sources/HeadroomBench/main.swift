@@ -24,6 +24,30 @@ func stderr(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8))
 let noPrice: EventPricer = { _ in .unpriced }
 
 switch command {
+case "reads":
+    // Live read-only probe of memory per step: Keychain read, usage API, Codex app-server, status pages.
+    func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) } }
+        return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+    let n = Int(option("--count") ?? "3") ?? 3
+    print(String(format: "start %.1f MB", footprintMB()))
+    let resolver = CLIResolver()
+    let claude = ClaudeUsageClient(refresher: nil)
+    let codex = CodexAppServerClient { await resolver.path(for: .codex) }
+    let status = StatusClient()
+    for i in 0..<n {
+        _ = try? await ClaudeCredentialReader().read()
+        print(String(format: "[%d] keychain %.1f MB", i, footprintMB()))
+        let c = await claude.read()
+        print(String(format: "[%d] claude %@ %.1f MB", i, c.fault == nil ? "ok" : "fault", footprintMB()))
+        let x = await codex.read()
+        print(String(format: "[%d] codex %@ %.1f MB", i, x.fault == nil ? "ok" : "fault", footprintMB()))
+        _ = await status.fetch(.claude)
+        print(String(format: "[%d] status %.1f MB", i, footprintMB()))
+    }
 case "scan":
     let cutoff = option("--cutoff").flatMap(Double.init) ?? (Date().timeIntervalSince1970 - 35 * 86400)
     let parallel = option("--parallel").flatMap(Int.init) ?? 4
