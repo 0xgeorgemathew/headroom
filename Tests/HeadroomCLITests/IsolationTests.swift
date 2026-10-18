@@ -31,7 +31,7 @@ import Testing
         for forbidden in ["URLSession", "NWPathMonitor", "nw_path", "SecItem", "SecKeychain", "_CFNetwork", "NSTask", "posix_spawn"] {
             #expect(!undefined.contains(forbidden), "headroom imports \(forbidden)")
         }
-        let defined = try symbols(["-g", "-defined-only"])
+        let defined = try symbols(["-g", "--defined-only"])
         for forbidden in ["ClaudeUsageClient", "ClaudeCredential", "CodexAppServerClient", "StatusClient", "LogIngestor"] {
             #expect(!defined.contains(forbidden), "headroom contains \(forbidden)")
         }
