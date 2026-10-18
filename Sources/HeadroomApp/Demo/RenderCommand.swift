@@ -37,6 +37,13 @@ enum RenderCommand {
         if name == "all" || name == "menubar" {
             if let rep = PopoverPage.renderMenuBars(now: now) { write(rep, to: outDir.appendingPathComponent("menubar.png")); written += 1 }
         }
+        if name == "all" || name == "share" {
+            let shares = PopoverPage.demoShares()
+            if let rep = ShareCardRenderer.card(shares[0]) { write(rep, to: outDir.appendingPathComponent("share-card-claude.png")); written += 1 }
+            if let rep = ShareCardRenderer.card(shares[1]) { write(rep, to: outDir.appendingPathComponent("share-card-codex.png")); written += 1 }
+            if let rep = ShareCardRenderer.snapshot(shares) { write(rep, to: outDir.appendingPathComponent("share-snapshot.png")); written += 1 }
+            try? ShareBuilder.text(shares).write(to: outDir.appendingPathComponent("share-text.txt"), atomically: true, encoding: .utf8)
+        }
         print("rendered \(written) image(s) to \(outDir.path)")
         return 0
     }
@@ -151,6 +158,19 @@ enum PopoverPage {
                     y += stripH + 6
                 }
             }
+        }
+    }
+
+    static func demoShares() -> [ShareModel] {
+        let now = Demo.activityNow
+        let pricing = (try? PriceTable.bundled()).map { PricingEngine(table: $0) }
+        let ap = ActivityPresenter(now: now, locale: Locale(identifier: "en_US"), pricing: pricing)
+        let aggregates = pricing.map { Demo.activityAggregates(now: now, pricing: $0) } ?? []
+        let pp = Presenter(now: Demo.now, locale: Locale(identifier: "en_US"))
+        let paces = [pp.paceCard(Demo.claudeMockup(now: Demo.now)), pp.paceCard(Demo.codexMockup(now: Demo.now))]
+        return [Provider.claude, .codex].enumerated().map { i, p in
+            let card = ap.card(p, aggregates: aggregates, range: .day, selection: 4..<8)
+            return ShareBuilder.make(activity: card, pace: paces[i], mode: .all, includeCost: true, burnInSpan: i == 0 ? 0.01 : 0.06, durationText: "4 hours")
         }
     }
 }
