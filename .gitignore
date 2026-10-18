@@ -12,3 +12,5 @@ DerivedData/
 # Local scratch
 /.scratch/
 *.profraw
+# Agent worktrees
+/.claude/
