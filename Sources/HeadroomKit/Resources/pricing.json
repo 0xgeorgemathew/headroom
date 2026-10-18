@@ -1,1 +1,53 @@
-{"as_of": "2026-10-18", "models": {}, "aliases": {}}
+{
+  "as_of": "2026-10-18",
+  "currency": "USD",
+  "unit": "per 1M tokens, Standard tier",
+  "aliases": {
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5",
+    "fable": "claude-fable-5-1"
+  },
+  "models": {
+    "claude-fable-5-1": { "input": 10.00, "cache_write_5m": 12.50, "cache_write_1h": 20.00, "cache_read": 0.25, "output": 50.00 },
+    "claude-fable-5": { "input": 10.00, "cache_write_5m": 12.50, "cache_write_1h": 20.00, "cache_read": 1.00, "output": 50.00 },
+    "claude-opus-5-5": { "input": 4.00, "cache_write_5m": 5.00, "cache_write_1h": 8.00, "cache_read": 0.20, "output": 20.00, "speed": { "fast": 2.0 } },
+    "claude-opus-5": { "input": 5.00, "cache_write_5m": 6.25, "cache_write_1h": 10.00, "cache_read": 0.50, "output": 25.00, "speed": { "fast": 2.0 } },
+    "claude-sonnet-5-5": { "input": 2.00, "cache_write_5m": 2.50, "cache_write_1h": 4.00, "cache_read": 0.20, "output": 10.00 },
+    "claude-sonnet-5": { "input": 2.00, "cache_write_5m": 2.50, "cache_write_1h": 4.00, "cache_read": 0.20, "output": 10.00 },
+    "claude-haiku-5-5": {
+      "input": 0.10, "cache_write_5m": 0.125, "cache_write_1h": 0.20, "cache_read": 0.01, "output": 0.50,
+      "long_context": { "above_prompt_tokens": 100000, "input": 0.50, "cache_write_5m": 0.625, "cache_write_1h": 1.00, "cache_read": 0.05, "output": 2.50 }
+    },
+    "claude-opus-4-8": { "input": 5.00, "cache_write_5m": 6.25, "cache_write_1h": 10.00, "cache_read": 0.50, "output": 25.00 },
+    "claude-opus-4-7": { "input": 5.00, "cache_write_5m": 6.25, "cache_write_1h": 10.00, "cache_read": 0.50, "output": 25.00 },
+    "claude-opus-4-6": { "input": 5.00, "cache_write_5m": 6.25, "cache_write_1h": 10.00, "cache_read": 0.50, "output": 25.00 },
+    "claude-sonnet-4-6": { "input": 3.00, "cache_write_5m": 3.75, "cache_write_1h": 6.00, "cache_read": 0.30, "output": 15.00 },
+    "claude-haiku-4-5": { "input": 1.00, "cache_write_5m": 1.25, "cache_write_1h": 2.00, "cache_read": 0.10, "output": 5.00 },
+    "gpt-6-astra": {
+      "input": 10.00, "cache_write_5m": 12.50, "cache_read": 1.00, "output": 50.00,
+      "long_context": { "above_prompt_tokens": 272000, "input_multiplier": 2.0, "cache_multiplier": 2.0, "output_multiplier": 1.5 },
+      "speed": { "fast": 2.0, "ultrafast": 6.0 }
+    },
+    "gpt-6.1-sol": {
+      "input": 2.00, "cache_write_5m": 2.50, "cache_read": 0.10, "output": 10.00,
+      "long_context": { "above_prompt_tokens": 272000, "input_multiplier": 2.0, "cache_multiplier": 2.0, "output_multiplier": 1.5 },
+      "speed": { "fast": 2.0, "ultrafast": 6.0 }
+    },
+    "gpt-6-sol": {
+      "input": 2.00, "cache_write_5m": 2.50, "cache_read": 0.20, "output": 10.00,
+      "long_context": { "above_prompt_tokens": 272000, "input_multiplier": 2.0, "cache_multiplier": 2.0, "output_multiplier": 1.5 },
+      "speed": { "fast": 2.0 }
+    },
+    "gpt-6-luna": {
+      "input": 0.10, "cache_write_5m": 0.125, "cache_read": 0.01, "output": 0.50,
+      "long_context": { "above_prompt_tokens": 272000, "input_multiplier": 2.0, "cache_multiplier": 2.0, "output_multiplier": 1.5 },
+      "speed": { "fast": 2.0 }
+    },
+    "gpt-5.6-luna": {
+      "input": 0.20, "cache_write_5m": 0.25, "cache_read": 0.02, "output": 1.20,
+      "long_context": { "above_prompt_tokens": 272000, "input_multiplier": 2.0, "cache_multiplier": 2.0, "output_multiplier": 1.5 },
+      "speed": { "fast": 2.0 }
+    }
+  }
+}
