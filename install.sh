@@ -35,9 +35,18 @@ done
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# curl has no timeouts by default, so a stalled connection hangs the install with no output.
+# Small requests get a hard cap; the download aborts if it stays under 1 KB/s for 30 seconds.
+fetch() { curl -fsSL --connect-timeout 15 --max-time 30 --retry 3 --retry-delay 2 "$@"; }
+download() { curl -fL --connect-timeout 15 --speed-limit 1024 --speed-time 30 --retry 3 --retry-delay 2 "$@"; }
+
 quit_app() {
-  osascript -e 'tell application id "com.headroom.app" to quit' >/dev/null 2>&1 || true
-  for _ in 1 2 3 4 5; do pgrep -x HeadroomApp >/dev/null || return 0; sleep 1; done
+  pgrep -x HeadroomApp >/dev/null || return 0
+  # Ask politely in the background: the Apple event can sit behind an Automation prompt.
+  osascript -e 'tell application id "com.headroom.app" to quit' >/dev/null 2>&1 &
+  local asker=$!
+  for _ in 1 2 3 4 5; do pgrep -x HeadroomApp >/dev/null || break; sleep 1; done
+  kill "$asker" >/dev/null 2>&1 || true
   pkill -x HeadroomApp >/dev/null 2>&1 || true
 }
 
@@ -77,22 +86,29 @@ else
   api="https://api.github.com/repos/$REPO/releases?per_page=1"
 fi
 say "Looking up the ${version:-latest} release"
-url=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api" \
+url=$(fetch -H "Accept: application/vnd.github+json" "$api" \
   | grep -o '"browser_download_url": *"[^"]*/Headroom-[^"]*\.zip"' | head -1 | sed -E 's/.*"(https[^"]+)"/\1/') || true
 [ -n "$url" ] || fail "Couldn't find a Headroom release on github.com/$REPO."
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 say "Downloading ${url##*/}"
-curl -fL --progress-bar "$url" -o "$tmp/Headroom.zip"
-if curl -fsSL "$url.sha256" -o "$tmp/Headroom.zip.sha256" 2>/dev/null; then
+download --progress-bar "$url" -o "$tmp/Headroom.zip" || fail "The download stalled or failed. Check your connection and run the installer again."
+say "Verifying the download"
+if fetch "$url.sha256" -o "$tmp/Headroom.zip.sha256" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/Headroom.zip.sha256")
   actual=$(shasum -a 256 "$tmp/Headroom.zip" | awk '{print $1}')
   [ "$expected" = "$actual" ] || fail "Checksum mismatch for ${url##*/}."
   say "Checksum verified"
+else
+  say "Couldn't fetch the checksum; continuing without it"
 fi
 ditto -x -k "$tmp/Headroom.zip" "$tmp/unzipped"
 [ -d "$tmp/unzipped/$APP_NAME" ] || fail "The download didn't contain $APP_NAME."
+
+# Older releases need a newer macOS than the installer does; stop before replacing anything.
+needs=$(plutil -extract LSMinimumSystemVersion raw "$tmp/unzipped/$APP_NAME/Contents/Info.plist" 2>/dev/null || echo 0)
+[ "$major" -ge "${needs%%.*}" ] || fail "${url##*/} needs macOS $needs or later (this Mac runs $(sw_vers -productVersion))."
 
 # Not notarized: clear the quarantine flag so Gatekeeper doesn't block the first launch.
 xattr -dr com.apple.quarantine "$tmp/unzipped/$APP_NAME" 2>/dev/null || true
