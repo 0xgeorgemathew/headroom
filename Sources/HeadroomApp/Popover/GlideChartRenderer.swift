@@ -25,7 +25,8 @@ enum GlideChartRenderer {
         let col: NSColor = g.brandLine.map { theme.isDark ? Brand.of($0).light : Brand.of($0).base } ?? theme.pacing(g.state).text
         let warnCol = theme.rose
 
-        // Day boundaries at local midnight.
+        // Day boundaries at local midnight; weekly boundaries for long (monthly) windows.
+        let weekly = hours > 240
         var bounds: [Double] = [0]
         if let firstMidnight = calendar.nextDate(after: g.windowStart, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) {
             var d = firstMidnight
@@ -33,7 +34,7 @@ enum GlideChartRenderer {
                 let h = d.timeIntervalSince(g.windowStart) / 3600
                 if h >= hours { break }
                 if h > 0.01 { bounds.append(h) }
-                guard let next = calendar.date(byAdding: .day, value: 1, to: d) else { break }
+                guard let next = calendar.date(byAdding: .day, value: weekly ? 7 : 1, to: d) else { break }
                 d = next
             }
         }
@@ -54,15 +55,21 @@ enum GlideChartRenderer {
 
         // Day labels; today in a pill.
         let dayFont = F.sf(8.5, 600), dayFontBold = F.sf(8.5, 750)
-        for i in 0..<(bounds.count - 1) where bounds[i + 1] - bounds[i] >= 12 {
+        for i in 0..<(bounds.count - 1) where bounds[i + 1] - bounds[i] >= (weekly ? 72 : 12) {
             let cx = X((bounds[i] + bounds[i + 1]) / 2)
             let current = g.nowT >= bounds[i] && g.nowT < bounds[i + 1]
             let warn = warnDay == i
-            if current { ctx.fill(rounded(CGRect(x: cx - 15, y: H - 15, width: 30, height: 14), 7), theme.chartPill) }
+            if current && !weekly { ctx.fill(rounded(CGRect(x: cx - 15, y: H - 15, width: 30, height: 14), 7), theme.chartPill) }
             let date = g.windowStart.addingTimeInterval((bounds[i] + 0.5) * 3600)
-            let name = weekdayAbbrev(date, calendar: calendar, locale: locale)
+            let name = weekly ? monthDayLabel(g.windowStart.addingTimeInterval(bounds[i] * 3600), calendar: calendar, locale: locale)
+                : weekdayAbbrev(date, calendar: calendar, locale: locale)
             let color = warn ? warnCol : current ? theme.ink : theme.chartLabel
-            Text(name, current || warn ? dayFontBold : dayFont, color, kern: 0.7).draw(x: cx + 0.35, baseline: H - 5, align: .center, in: ctx)
+            let label = Text(name, current || warn ? dayFontBold : dayFont, color, kern: 0.7)
+            if current && weekly {
+                // Widen today's pill to fit a date.
+                ctx.fill(rounded(CGRect(x: cx - label.width / 2 - 7, y: H - 15, width: label.width + 14, height: 14), 7), theme.chartPill)
+            }
+            label.draw(x: cx + 0.35, baseline: H - 5, align: .center, in: ctx)
         }
 
         // Even pace diagonal.
@@ -203,6 +210,15 @@ enum GlideChartRenderer {
         f.timeZone = calendar.timeZone
         f.setLocalizedDateFormatFromTemplate("EEE")
         return f.string(from: date).uppercased().replacingOccurrences(of: ".", with: "")
+    }
+
+    private static func monthDayLabel(_ date: Date, calendar: Calendar, locale: Locale) -> String {
+        let f = DateFormatter()
+        f.calendar = calendar
+        f.locale = locale
+        f.timeZone = calendar.timeZone
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f.string(from: date).uppercased()
     }
 
     private static func drawOutlined(_ s: NSAttributedString, center: CGPoint, outline: NSColor, ctx: CGContext) {

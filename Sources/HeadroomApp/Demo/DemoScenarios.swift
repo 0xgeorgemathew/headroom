@@ -127,6 +127,15 @@ enum Demo {
         out.append(PaceScenario(name: "early-reset", inputs: [early], note: "Early reset"))
         let credits = [ResetCredit(expiresAt: at(now, hours: 50), title: "Weekly limit reset", count: 1), ResetCredit(expiresAt: at(now, hours: 400), title: "Weekly limit reset", count: 1)]
         out.append(PaceScenario(name: "credits", inputs: [state(.codex, used: 0.35, elapsedH: 70, credits: credits, now: now)], note: "Reset credits expiring"))
+        // Free plan: one 30-day window (PLAN §14.2).
+        let mStart = at(now, hours: -9 * 24)
+        let monthly = LimitWindow(id: "weekly", kind: .weekly, used: 0.22, resetsAt: at(mStart, hours: 30 * 24), duration: 30 * 86400)
+        let mSamples = (0...(9 * 24)).map { UsageSample(time: at(mStart, hours: Double($0)), used: 0.22 * Double($0) / (9 * 24)) }
+        out.append(PaceScenario(name: "monthly", inputs: [PaceInput(provider: .codex, reading: LimitReading(provider: .codex, fetchedAt: now, source: .appServer, plan: PlanCatalog.codex(planType: "free"), windows: [monthly]), samples: ["weekly": mSamples])], note: "Free plan, 30-day window"))
+        // Team seat without an all-models weekly limit: the Fable cap is the headline.
+        let fableHead = LimitWindow(id: LimitWindow.modelID("Fable"), kind: .modelWeekly, label: "Fable", used: 0.35, resetsAt: at(now, hours: 60), duration: 168 * 3600, isActive: true)
+        let teamSession = LimitWindow(id: "session", kind: .session, used: 0.5, resetsAt: at(now, hours: 2))
+        out.append(PaceScenario(name: "team-scoped", inputs: [PaceInput(provider: .claude, reading: LimitReading(provider: .claude, fetchedAt: now, source: .api, plan: PlanCatalog.claude(subscriptionType: "team", rateLimitTier: "default_claude_max_5x"), windows: [teamSession, fableHead]))], note: "No weekly_all: scoped cap headline"))
         return out
     }
 }

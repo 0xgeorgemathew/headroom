@@ -25,6 +25,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.model.settingsChanged()
         }
         model.start()
+        // Test hook for measurements and screenshots: `open Headroom.app --args --open-popover [--tab 1]`.
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--open-popover") {
+            if let i = args.firstIndex(of: "--tab"), i + 1 < args.count, let t = Int(args[i + 1]) { settings.lastTab = t }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, let button = self.statusItem.item.button else { return }
+                self.popover.show(relativeTo: button)
+            }
+        }
     }
 
     func showSettings() {
