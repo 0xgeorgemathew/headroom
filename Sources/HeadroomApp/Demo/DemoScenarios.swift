@@ -1,0 +1,132 @@
+import AppKit
+import HeadroomKit
+
+/// Fixture-driven states for every surface, so the visual pass can reach each one without
+/// waiting for real usage (`HeadroomApp --demo <name>` or `--render <name>`).
+@MainActor
+enum Demo {
+    /// Tuesday 2026-10-20 10:00 local — the mockup's moment.
+    static var now: Date {
+        var c = DateComponents()
+        c.year = 2026; c.month = 10; c.day = 20; c.hour = 10; c.minute = 0
+        return Calendar.current.date(from: c)!
+    }
+
+    static func at(_ base: Date, hours: Double) -> Date { base.addingTimeInterval(hours * 3600) }
+
+    /// Port of the mockup's `series()`: cumulative used fraction sampled hourly, with daytime
+    /// activity and a deterministic jitter.
+    static func series(total: Double, nowH: Int, startHour: Int, seed: Int, shape: ((Int) -> Double)? = nil) -> [Double] {
+        var s = seed
+        func rnd() -> Double { s = (s * 16807) % 2147483647; return Double(s) / 2147483647 }
+        var w: [Double] = []
+        for h in 0..<nowH {
+            let lh = (startHour + h) % 24
+            var v = lh >= 10 && lh <= 19 ? 1 : lh >= 20 && lh <= 23 ? 0.35 : 0.03
+            v *= shape?(h) ?? 1
+            w.append(v * (0.55 + rnd() * 0.9))
+        }
+        let sum = w.reduce(0, +)
+        var c = [0.0]
+        for v in w { c.append(c[c.count - 1] + v / sum * total) }
+        return c
+    }
+
+    static func samples(_ cum: [Double], start: Date) -> [UsageSample] {
+        cum.enumerated().map { UsageSample(time: at(start, hours: Double($0.offset)), used: $0.element) }
+    }
+
+    // MARK: Pace inputs
+
+    struct PaceScenario {
+        var name: String
+        var inputs: [PaceInput]
+        var note: String
+    }
+
+    static func claudeMockup(now: Date) -> PaceInput {
+        let start = at(now, hours: -148)
+        let cum = series(total: 0.18, nowH: 148, startHour: 6, seed: 11)
+        let weekly = LimitWindow(id: "weekly", kind: .weekly, used: 0.18, resetsAt: at(start, hours: 168), duration: 168 * 3600)
+        let session = LimitWindow(id: "session", kind: .session, used: 0.84, resetsAt: at(now, hours: 0.8), duration: 5 * 3600)
+        let reading = LimitReading(provider: .claude, fetchedAt: at(now, hours: -2.0 / 60), source: .api,
+                                   plan: PlanCatalog.claude(subscriptionType: "max", rateLimitTier: "default_claude_max_20x"),
+                                   windows: [session, weekly])
+        // Flatten the last day so the projection lands at "80% renews unused".
+        var s = samples(cum, start: start)
+        for i in s.indices where s[i].time > at(now, hours: -24) { s[i].used = min(s[i].used, 0.18 - 0.001 * now.timeIntervalSince(s[i].time) / 3600) }
+        return PaceInput(provider: .claude, reading: reading, samples: ["weekly": s], weekCostMicros: 412_000_000)
+    }
+
+    static func codexMockup(now: Date) -> PaceInput {
+        let start = at(now, hours: -69)
+        let cum = series(total: 0.41, nowH: 69, startHour: 13, seed: 5) { $0 > 45 ? 2.4 : 1 }
+        let weekly = LimitWindow(id: "weekly", kind: .weekly, used: 0.41, resetsAt: at(start, hours: 168), duration: 168 * 3600)
+        let session = LimitWindow(id: "session", kind: .session, used: 0.12, resetsAt: at(now, hours: 5.17), duration: 5 * 3600)
+        let credits = [
+            ResetCredit(expiresAt: at(now, hours: 72), title: "Weekly limit reset"),
+            ResetCredit(expiresAt: at(now, hours: 24 * 20), title: "Weekly limit reset"),
+            ResetCredit(expiresAt: nil, title: nil),
+        ]
+        let reading = LimitReading(provider: .codex, fetchedAt: at(now, hours: -2.0 / 60), source: .appServer,
+                                   plan: PlanCatalog.codex(planType: "pro"), windows: [session, weekly],
+                                   resetCredits: credits, resetCreditsAvailable: 3)
+        return PaceInput(provider: .codex, reading: reading, samples: ["weekly": samples(cum, start: start)], weekCostMicros: 186_000_000)
+    }
+
+    /// A single-window state for the state gallery: used `u` with `elapsedH` of 168 gone,
+    /// and a burn over the last day.
+    static func state(_ p: Provider, used u: Double, elapsedH: Double, lastDayBurn: Double? = nil, session: Double = 0.3,
+                      fault: Fault? = nil, caps: [LimitWindow] = [], credits: [ResetCredit] = [], now: Date) -> PaceInput {
+        let start = at(now, hours: -elapsedH)
+        let weekly = LimitWindow(id: "weekly", kind: .weekly, used: u, resetsAt: at(start, hours: 168), duration: 168 * 3600)
+        let sess = LimitWindow(id: "session", kind: .session, used: session, resetsAt: at(now, hours: 2.2), duration: 5 * 3600)
+        var s: [UsageSample] = []
+        let n = Int(elapsedH)
+        let dayBurn = lastDayBurn ?? (u / max(elapsedH, 1) * 24)
+        let usedAtDayStart = max(0, u - dayBurn)
+        for h in 0...max(n, 1) {
+            let t = Double(h)
+            let used: Double = t <= elapsedH - 24 ? usedAtDayStart * t / max(elapsedH - 24, 1) : usedAtDayStart + (u - usedAtDayStart) * (t - (elapsedH - 24)) / 24
+            s.append(UsageSample(time: at(start, hours: t), used: min(used, u)))
+        }
+        let plan = p == .claude ? PlanCatalog.claude(subscriptionType: "max", rateLimitTier: "default_claude_max_5x") : PlanCatalog.codex(planType: "plus")
+        let reading = LimitReading(provider: p, fetchedAt: at(now, hours: fault == nil ? -1.0 / 60 : -1.6), source: p == .claude ? .api : .appServer,
+                                   plan: plan, windows: [sess, weekly] + caps, resetCredits: credits)
+        return PaceInput(provider: p, reading: reading, samples: ["weekly": s], fault: fault, weekCostMicros: p == .claude ? 96_400_000 : 31_200_000)
+    }
+
+    static func paceScenarios(now: Date) -> [PaceScenario] {
+        var out: [PaceScenario] = [
+            PaceScenario(name: "mockup", inputs: [claudeMockup(now: now), codexMockup(now: now)], note: "Pace mockup: amber session, Plenty; Codex tight by projection"),
+            PaceScenario(name: "plenty", inputs: [state(.claude, used: 0.18, elapsedH: 150, now: now)], note: "Plenty available + hourglass"),
+            PaceScenario(name: "onpace", inputs: [state(.codex, used: 0.52, elapsedH: 84, now: now)], note: "On pace"),
+            PaceScenario(name: "tight", inputs: [state(.claude, used: 0.62, elapsedH: 88, now: now)], note: "Getting tight (S rule)"),
+            PaceScenario(name: "tight-projection", inputs: [codexMockup(now: now)], note: "Getting tight (projection)"),
+            PaceScenario(name: "verytight", inputs: [state(.codex, used: 0.82, elapsedH: 72, now: now)], note: "Very tight"),
+            PaceScenario(name: "exhausted", inputs: [state(.claude, used: 1, elapsedH: 140, now: now)], note: "Weekly limit reached"),
+        ]
+        for (level, used) in [("session-row", 0.42), ("session-amber", 0.84), ("session-rose", 0.94), ("session-blocked", 1.0)] {
+            out.append(PaceScenario(name: level, inputs: [state(.claude, used: 0.46, elapsedH: 90, session: used, now: now)], note: "5-hour session \(level)"))
+        }
+        let faults: [(String, Fault)] = [
+            ("fault-offline", .offline), ("fault-signedout", .signedOut), ("fault-cli", .cliMissing),
+            ("fault-enterprise", .enterprise), ("fault-outage", .outage(description: "Claude Code partial outage (status.claude.com).")),
+            ("fault-schema", .schemaDrift),
+        ]
+        for (name, f) in faults {
+            out.append(PaceScenario(name: name, inputs: [state(.claude, used: 0.46, elapsedH: 90, fault: f, now: now)], note: name))
+        }
+        out.append(PaceScenario(name: "fault-codex-signedout", inputs: [PaceInput(provider: .codex, reading: nil, fault: .signedOut)], note: "No reading yet"))
+        let fable = LimitWindow(id: LimitWindow.modelID("Fable"), kind: .modelWeekly, label: "Fable", used: 1, resetsAt: at(now, hours: 72), duration: 168 * 3600)
+        out.append(PaceScenario(name: "cap-empty", inputs: [state(.claude, used: 0.40, elapsedH: 96, caps: [fable], now: now)], note: "Model cap reached"))
+        var fableTight = fable; fableTight.used = 0.62
+        out.append(PaceScenario(name: "cap-tight", inputs: [state(.claude, used: 0.30, elapsedH: 80, caps: [fableTight], now: now)], note: "Model cap tighter than weekly"))
+        var early = state(.codex, used: 0.12, elapsedH: 30, now: now)
+        early.earlyResetAt = at(now, hours: -30)
+        out.append(PaceScenario(name: "early-reset", inputs: [early], note: "Early reset"))
+        let credits = [ResetCredit(expiresAt: at(now, hours: 50), title: "Weekly limit reset", count: 1), ResetCredit(expiresAt: at(now, hours: 400), title: "Weekly limit reset", count: 1)]
+        out.append(PaceScenario(name: "credits", inputs: [state(.codex, used: 0.35, elapsedH: 70, credits: credits, now: now)], note: "Reset credits expiring"))
+        return out
+    }
+}
