@@ -1,0 +1,14 @@
+# Only code is committed. Planning docs, mockups and prompts stay local.
+/docs/
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+/build/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+# macOS
+.DS_Store
+# Local scratch
+/.scratch/
+*.profraw
