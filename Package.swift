@@ -5,7 +5,7 @@ let strict: [SwiftSetting] = [.swiftLanguageMode(.v6)]
 
 let package = Package(
     name: "Headroom",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "HeadroomApp", targets: ["HeadroomApp"]),
         .executable(name: "headroom", targets: ["headroom"]),

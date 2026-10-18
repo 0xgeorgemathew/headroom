@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/0xgeorgemathew/headroom/releases"><img alt="Latest beta" src="https://img.shields.io/github/v/release/0xgeorgemathew/headroom?include_prereleases&label=latest%20beta&color=4A8EFF"></a>
-  <img alt="For macOS 26 and later" src="https://img.shields.io/badge/macOS-26%2B-1C1C1E">
+  <img alt="For macOS 15 and later" src="https://img.shields.io/badge/macOS-15%2B-1C1C1E">
   <img alt="Free and open" src="https://img.shields.io/badge/license-public%20domain-30D158">
 </p>
 
@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/0xgeorgemathew/headroom/main/instal
 
 Headroom appears in your menu bar a few seconds later. Open its Settings to turn on **Launch at login**.
 
-You'll need a Mac with Apple silicon on macOS 26 or later, and Claude Code or Codex signed in to your subscription.
+You'll need a Mac with Apple silicon on macOS 15 or later, and Claude Code or Codex signed in to your subscription.
 
 <br>
 
