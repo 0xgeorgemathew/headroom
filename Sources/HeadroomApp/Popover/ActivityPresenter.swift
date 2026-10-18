@@ -23,8 +23,8 @@ struct ClassMicros: Sendable, Hashable {
 @MainActor
 struct ActivityPresenter {
     var now: Date
-    var calendar: Calendar = .current
-    var locale: Locale = .current
+    var calendar: Calendar = Display.calendar
+    var locale: Locale = Display.locale
     var pricing: PricingEngine?
 
     struct Bins {

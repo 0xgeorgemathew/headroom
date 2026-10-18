@@ -14,3 +14,4 @@ DerivedData/
 *.profraw
 # Agent worktrees
 /.claude/
+/dist/

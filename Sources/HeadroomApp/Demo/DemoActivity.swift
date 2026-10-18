@@ -10,7 +10,7 @@ extension Demo {
     static func activityAggregates(now: Date, pricing: PricingEngine) -> [HourAggregate] {
         let cv: [Double] = [30, 17, 9, 18, 55, 69.4, 48, 16.6, 4, 8, 24, 15, 8, 1, 0, 0, 0, 0, 0, 0, 0, 1, 9, 20]
         let xv: [Double] = [52, 32, 18, 22, 92, 96, 52, 17, 2, 7, 56, 58, 32, 2, 0, 0, 0, 0, 0, 0, 1, 0, 36, 84]
-        let cal = Calendar.current
+        let cal = Display.calendar
         let current = cal.dateInterval(of: .hour, for: now)!.start
         var out: [HourAggregate] = []
         func add(_ p: Provider, _ values: [Double], models: [(String, Double)], projects: [String], daysBack: Int) {

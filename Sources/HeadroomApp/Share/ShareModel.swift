@@ -42,6 +42,9 @@ enum ShareBuilder {
         var bars: [Int64] = []
         var labels: [String] = []
         let f = DateFormatter()
+        f.locale = Display.locale
+        f.calendar = Display.calendar
+        f.timeZone = Display.calendar.timeZone
         f.setLocalizedDateFormatFromTemplate(selected.count > 30 ? "MMMd" : (selected.first.map { $0.end.timeIntervalSince($0.start) >= 86400 } ?? false) ? "MMMd" : "j")
         for chunk in stride(from: 0, to: selected.count, by: group) {
             let slice = selected[chunk..<min(chunk + group, selected.count)]

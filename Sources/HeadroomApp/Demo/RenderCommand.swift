@@ -7,6 +7,12 @@ import HeadroomKit
 enum RenderCommand {
     static func run(_ args: [String]) -> Int32 {
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
+        // Pinned so the images look the same on every machine (README screenshots).
+        Display.locale = Locale(identifier: "en_US")
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        cal.locale = Display.locale
+        Display.calendar = cal
         let name = value("--render") ?? "all"
         let outDir = URL(fileURLWithPath: value("--out") ?? FileManager.default.currentDirectoryPath)
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)

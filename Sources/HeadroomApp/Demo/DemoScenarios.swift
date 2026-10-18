@@ -9,7 +9,7 @@ enum Demo {
     static var now: Date {
         var c = DateComponents()
         c.year = 2026; c.month = 10; c.day = 20; c.hour = 10; c.minute = 0
-        return Calendar.current.date(from: c)!
+        return Display.calendar.date(from: c)!
     }
 
     static func at(_ base: Date, hours: Double) -> Date { base.addingTimeInterval(hours * 3600) }
@@ -100,7 +100,7 @@ enum Demo {
         var out: [PaceScenario] = [
             PaceScenario(name: "mockup", inputs: [claudeMockup(now: now), codexMockup(now: now)], note: "Pace mockup: amber session, Plenty; Codex tight by projection"),
             PaceScenario(name: "plenty", inputs: [state(.claude, used: 0.18, elapsedH: 150, now: now)], note: "Plenty available + hourglass"),
-            PaceScenario(name: "onpace", inputs: [state(.codex, used: 0.52, elapsedH: 84, now: now)], note: "On pace"),
+            PaceScenario(name: "onpace", inputs: [state(.codex, used: 0.40, elapsedH: 84, now: now)], note: "On pace"),
             PaceScenario(name: "tight", inputs: [state(.claude, used: 0.62, elapsedH: 88, now: now)], note: "Getting tight (S rule)"),
             PaceScenario(name: "tight-projection", inputs: [codexMockup(now: now)], note: "Getting tight (projection)"),
             PaceScenario(name: "verytight", inputs: [state(.codex, used: 0.82, elapsedH: 72, now: now)], note: "Very tight"),

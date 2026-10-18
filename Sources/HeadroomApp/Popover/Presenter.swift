@@ -20,8 +20,8 @@ struct PaceInput {
 @MainActor
 struct Presenter {
     var now: Date
-    var calendar: Calendar = .current
-    var locale: Locale = .current
+    var calendar: Calendar = Display.calendar
+    var locale: Locale = Display.locale
     var policy: PacingPolicy = .standard
 
     func paceCard(_ input: PaceInput) -> PaceCardModel {

@@ -6,7 +6,7 @@ import HeadroomKit
 @MainActor
 enum HistoryCardRenderer {
     static func draw(provider: Provider, record: WeekRecord?, origin: CGPoint, width: CGFloat, theme: Theme, ctx: CGContext?,
-                     calendar: Calendar = .current, locale: Locale = .current) -> CGFloat {
+                     calendar: Calendar = Display.calendar, locale: Locale = Display.locale) -> CGFloat {
         let x0 = origin.x + 14, w = width - 28
         let glideH = GlideChartRenderer.height(width: w)
         let h: CGFloat = 13 + 28 + 14 + glideH + 12 + 38 * 2 + 12

@@ -4,13 +4,16 @@
 #   make app        assemble and sign build/Headroom.app
 #   make install    install to /Applications, link the CLI and man page, restart the app
 #   make icon       regenerate assets/AppIcon.icns from assets/icon.svg
+#   make screenshots  render every UI state from fixtures into media/ (README images)
+#   make release    zip the signed app into dist/ with a SHA-256 checksum
 
+VERSION  := 0.1.0-beta.1
 APP      := build/Headroom.app
 RELEASE  := .build/release
 # First valid Apple Development identity, by SHA-1 (names can be ambiguous).
 IDENTITY ?= $(shell security find-identity -v -p codesigning | grep -v REVOKED | grep "Apple Development" | head -1 | awk '{print $$2}')
 
-.PHONY: all build test app install icon clean bench
+.PHONY: all build test app install icon clean bench screenshots release
 
 all: build
 
@@ -26,6 +29,15 @@ bench:
 
 icon:
 	Scripts/make-icon.sh
+
+screenshots:
+	Scripts/screenshots.sh
+
+release: app
+	rm -rf dist && mkdir -p dist
+	ditto -c -k --sequesterRsrc --keepParent $(APP) dist/Headroom-$(VERSION).zip
+	cd dist && shasum -a 256 Headroom-$(VERSION).zip > Headroom-$(VERSION).zip.sha256
+	@cat dist/Headroom-$(VERSION).zip.sha256
 
 app: build
 	rm -rf $(APP)
@@ -54,4 +66,4 @@ install: app
 	open /Applications/Headroom.app
 
 clean:
-	rm -rf build .build
+	rm -rf build .build dist

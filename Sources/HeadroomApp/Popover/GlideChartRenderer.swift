@@ -9,7 +9,7 @@ enum GlideChartRenderer {
 
     static func height(width: CGFloat) -> CGFloat { vbH * width / vbW }
 
-    static func draw(_ g: GlideModel, rect: CGRect, theme: Theme, ctx: CGContext, calendar: Calendar = .current, locale: Locale = .current) {
+    static func draw(_ g: GlideModel, rect: CGRect, theme: Theme, ctx: CGContext, calendar: Calendar = Display.calendar, locale: Locale = Display.locale) {
         ctx.saveGState()
         ctx.translateBy(x: rect.minX, y: rect.minY)
         ctx.scaleBy(x: rect.width / vbW, y: rect.width / vbW)

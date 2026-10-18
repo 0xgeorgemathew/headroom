@@ -6,8 +6,8 @@ import HeadroomKit
 @MainActor
 struct SnapshotBuilder {
     var now: Date
-    var calendar: Calendar = .current
-    var locale: Locale = .current
+    var calendar: Calendar = Display.calendar
+    var locale: Locale = Display.locale
 
     func build(model: AppModel) -> Snapshot {
         let presenter = Presenter(now: now, calendar: calendar, locale: locale)
