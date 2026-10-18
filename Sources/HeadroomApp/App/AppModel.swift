@@ -251,8 +251,19 @@ final class AppModel {
     func refreshNow() {
         scheduler.refreshNow()
         if settings.statusChecks { for p in settings.enabledProviders { checkStatus(p) } }
+        // `headroom --refresh` waits for a new generated_at: write once the fresh reads land
+        // (or after 8 s, so the CLI never waits its full 10 s for nothing).
+        pendingRefreshWrite = true
         tick()
-        // Always rewrite the snapshot so `headroom --refresh` sees a new generated_at.
+        if inFlight.isEmpty { finishRefreshWrite() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.finishRefreshWrite() }
+    }
+
+    private var pendingRefreshWrite = false
+
+    private func finishRefreshWrite() {
+        guard pendingRefreshWrite else { return }
+        pendingRefreshWrite = false
         lastSnapshotBody = nil
         writeSnapshot()
     }
@@ -300,6 +311,7 @@ final class AppModel {
             if outcome.fault != nil, settings.statusChecks { checkStatus(p) }
             scheduler.recordLimitRead(p, at: now, succeeded: outcome.fault == nil, retryAt: machine.nextRetryAt)
             changed()
+            if inFlight.isEmpty { finishRefreshWrite() }
             await saver?.schedule()
             armTimer()
         }
