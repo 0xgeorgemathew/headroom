@@ -51,6 +51,24 @@ enum RenderCommand {
                 }
             }
         }
+        if name == "all" || name == "menubar-options" {
+            for dark in [true, false] {
+                for (option, options, mode) in PopoverPage.menuBarOptionRows {
+                    let items = Demo.menuBarItems(options: options, mode: mode)
+                    let size = NSSize(width: StatusItemRenderer.width(items), height: StatusItemRenderer.height)
+                    if let cg = StatusItemRenderer.renderBitmap(items, size: size, dark: dark, scale: 3) {
+                        write(NSBitmapImageRep(cgImage: cg), to: outDir.appendingPathComponent("statusitem-\(option)-\(dark ? "dark" : "light").png")); written += 1
+                    }
+                }
+            }
+        }
+        if name == "all" || name == "sessions" {
+            for theme in themes {
+                if let rep = PopoverPage.renderSessionHistory(theme: theme) {
+                    write(rep, to: outDir.appendingPathComponent("sessions-\(theme.isDark ? "dark" : "light").png")); written += 1
+                }
+            }
+        }
         if name == "all" || name == "menubar" {
             if let rep = PopoverPage.renderMenuBars(now: now) { write(rep, to: outDir.appendingPathComponent("menubar.png")); written += 1 }
         }
@@ -60,6 +78,24 @@ enum RenderCommand {
             if let rep = ShareCardRenderer.card(shares[1]) { write(rep, to: outDir.appendingPathComponent("share-card-codex.png")); written += 1 }
             if let rep = ShareCardRenderer.snapshot(shares) { write(rep, to: outDir.appendingPathComponent("share-snapshot.png")); written += 1 }
             try? ShareBuilder.text(shares).write(to: outDir.appendingPathComponent("share-text.txt"), atomically: true, encoding: .utf8)
+        }
+        if name == "all" || name == "session" {
+            for theme in themes {
+                for (state, used) in PopoverPage.sessionStates {
+                    if let rep = PopoverPage.renderSessionCard(used: used, theme: theme) {
+                        write(rep, to: outDir.appendingPathComponent("session-\(state)-\(theme.isDark ? "dark" : "light").png")); written += 1
+                    }
+                }
+            }
+        }
+        if name == "all" || name == "onboarding" {
+            for theme in themes {
+                for step in 0..<OnboardingView.steps.count {
+                    if let rep = PopoverPage.renderOnboarding(step: step, theme: theme) {
+                        write(rep, to: outDir.appendingPathComponent("onboarding-\(step + 1)-\(theme.isDark ? "dark" : "light").png")); written += 1
+                    }
+                }
+            }
         }
         print("rendered \(written) image(s) to \(outDir.path)")
         return 0
@@ -125,6 +161,15 @@ enum PopoverPage {
                 if let ctx { PastWeeksRenderer.drawLegend(x: pad, y: y, width: cw, theme: theme, ctx: ctx) }
                 y += PastWeeksRenderer.legendHeight
             }
+            y += 6
+            if let ctx { SessionHistoryRenderer.drawSectionHeader(x: pad, y: y, width: cw, warnAt: 0.75, theme: theme, ctx: ctx) }
+            y += SessionHistoryRenderer.sectionHeaderHeight
+            for (i, p) in [Provider.claude, .codex].enumerated() {
+                if i > 0 { y += 10 }
+                let m = SessionHistoryRenderer.model(p, sessions: collecting ? [] : Demo.sessionHistory(p, now: Demo.now), warnAt: 0.75, now: Demo.now)
+                y += SessionHistoryRenderer.draw(m, origin: CGPoint(x: pad, y: y), width: cw, theme: theme, ctx: ctx)
+            }
+            y += 4
             if let ctx { PopoverChrome.drawFooter(FooterModel(text: "All systems normal", status: .fresh), x: pad, y: y, width: cw, theme: theme, ctx: ctx, out: nil) }
             return y + PopoverChrome.footerHeight + pad
         }
@@ -174,6 +219,80 @@ enum PopoverPage {
                     StatusItemRenderer.draw(items, in: CGRect(x: r.maxX - 12 - iw, y: r.midY - 11, width: iw, height: 22), dark: dark, ctx: ctx)
                     y += stripH + 6
                 }
+            }
+        }
+    }
+
+    /// One welcome step at window size, with the window's traffic lights, from scratch settings.
+    static func renderOnboarding(step: Int, theme: Theme, configure: ((AppSettings) -> Void)? = nil) -> NSBitmapImageRep? {
+        let suite = "com.headroom.render.onboarding"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        // The welcome as a typical user sees it: both tools found, a timer always on, the warning at 75%.
+        settings.alwaysShowSessionTimer = step >= 2
+        configure?(settings)
+        let view = OnboardingView(settings: settings) { p in .signedIn(plan: p == .claude ? "MAX 20×" : "PRO") }
+        view.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+        let size = OnboardingView.size
+        return renderImage(size: size, appearance: view.appearance) { ctx in
+            let shape = rounded(CGRect(origin: .zero, size: size), 12)
+            ctx.addPath(shape); ctx.clip()
+            view.render(step: step, ctx: ctx)
+            for (i, hex) in [0xFF5F57, 0xFEBC2E, 0x28C840].enumerated() {
+                let dot = CGMutablePath(); dot.addEllipse(in: CGRect(x: 20 + CGFloat(i) * 20, y: 18, width: 12, height: 12))
+                ctx.fill(dot, rgb(UInt32(hex)))
+                ctx.stroke(dot, black(0.12), width: 0.5)
+            }
+            ctx.innerStroke(shape, theme.isDark ? white(0.12) : black(0.1), width: 1)
+        }
+    }
+
+    static let sessionStates: [(String, Double)] = [("idle", 0), ("comfortable", 0.42), ("runsout", 0.6), ("amber", 0.84), ("rose", 0.94), ("blocked", 1)]
+
+    /// A card cut down to its header and the detailed 5-hour panel.
+    static func renderSessionCard(used: Double, theme: Theme) -> NSBitmapImageRep? {
+        let now = Demo.now
+        let presenter = Presenter(now: now, locale: Locale(identifier: "en_US"))
+        let input = Demo.state(.claude, used: 0.46, elapsedH: 90, session: used, now: now)
+        var card = presenter.paceCard(input)
+        guard var module = card.sessionModule else { return nil }
+        module.onTop = true
+        card.sessionModule = module
+        let m: CGFloat = 12, w: CGFloat = 360, pad: CGFloat = 14
+        let mh = PaceCardRenderer.sessionModuleHeight(module, width: w - pad * 2)
+        let h = 13 + 28 + 12 + mh + 14
+        return renderImage(size: CGSize(width: w + m * 2, height: h + m * 2)) { ctx in
+            ctx.fill(CGPath(rect: CGRect(x: 0, y: 0, width: w + m * 2, height: h + m * 2), transform: nil), theme.windowFill)
+            CardChrome.draw(CGRect(x: m, y: m, width: w, height: h), provider: .claude, theme: theme, ctx: ctx)
+            PaceCardRenderer.drawHeader(card, x: m + pad, y: m + 13, w: w - pad * 2, theme: theme, ctx: ctx, out: nil)
+            PaceCardRenderer.drawSessionModule(module, rect: CGRect(x: m + pad, y: m + 13 + 28 + 12, width: w - pad * 2, height: mh), theme: theme, ctx: ctx)
+        }
+    }
+
+    /// The menu bar under each Settings choice, one strip per row, at 3×.
+    static let menuBarOptionRows: [(String, PresentationOptions, MenuBarMode)] = [
+        ("default", PresentationOptions(), .both),
+        ("percent", PresentationOptions(showPercent: true), .both),
+        ("session", PresentationOptions(meterFocus: .session, alwaysShowSessionTimer: true), .both),
+        ("tighter", PresentationOptions(meterFocus: .tighter, showPercent: true), .both),
+        ("urgent", PresentationOptions(alwaysShowSessionTimer: true), .mostUrgent),
+    ]
+
+    /// The Activity tab's 5-hour sessions section on its own.
+    static func renderSessionHistory(theme: Theme) -> NSBitmapImageRep? {
+        let w = PopoverChrome.width, pad = PopoverChrome.pad, cw = w - pad * 2
+        let models = [Provider.claude, .codex].map { SessionHistoryRenderer.model($0, sessions: Demo.sessionHistory($0, now: Demo.now), warnAt: 0.75, now: Demo.now) }
+        let h = pad + SessionHistoryRenderer.sectionHeaderHeight + models.reduce(0) { $0 + SessionHistoryRenderer.draw($1, origin: .zero, width: cw, theme: theme, ctx: nil) } + 10 + pad
+        return renderImage(size: CGSize(width: w, height: h)) { ctx in
+            ctx.fill(CGPath(rect: CGRect(x: 0, y: 0, width: w, height: h), transform: nil), theme.windowFill)
+            var y = pad
+            SessionHistoryRenderer.drawSectionHeader(x: pad, y: y, width: cw, warnAt: 0.75, theme: theme, ctx: ctx)
+            y += SessionHistoryRenderer.sectionHeaderHeight
+            for (i, m) in models.enumerated() {
+                if i > 0 { y += 10 }
+                y += SessionHistoryRenderer.draw(m, origin: CGPoint(x: pad, y: y), width: cw, theme: theme, ctx: ctx)
             }
         }
     }

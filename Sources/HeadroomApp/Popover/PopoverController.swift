@@ -33,6 +33,7 @@ final class PopoverController: NSObject {
         panel.becomesKeyOnlyIfNeeded = false
         panel.acceptsMouseMovedEvents = true
         panel.animationBehavior = .utilityWindow
+        panel.appearance = model.settings.appearance.nsAppearance
 
         // The surface is drawn by PopoverRootView (the mockup's opaque window with a top sheen).
         // NSGlassEffectView and NSVisualEffectView both render in-process with Metal and map a
@@ -95,6 +96,7 @@ final class PopoverController: NSObject {
 
     /// Called when the model changed.
     func refresh() {
+        if let panel, panel.appearance != model.settings.appearance.nsAppearance { panel.appearance = model.settings.appearance.nsAppearance }
         root?.rebuild(animated: true)
     }
 
@@ -249,6 +251,7 @@ final class CardsView: NSView, NSViewToolTipOwner {
     private var paceCards: [PaceCardModel] = []
     private var activityCards: [ActivityCardModel] = []
     private var weeks: [PastWeeksModel] = []
+    private var sessionHistories: [SessionHistoryModel] = []
     private var weekRecords: [Provider: [WeekRecord]] = [:]
     private var out = RenderOutput()
     private var chartLayouts: [Provider: ActivityCardRenderer.Layout] = [:]
@@ -270,7 +273,7 @@ final class CardsView: NSView, NSViewToolTipOwner {
 
     func rebuild(animated: Bool) {
         let now = Date()
-        let presenter = Presenter(now: now)
+        let presenter = model.presenter(now: now)
         paceCards = model.paceInputs().map { presenter.paceCard($0) }
         let states = paceCards.map { $0.meter?.state }
         if tab == 1 || historyWeek != nil {
@@ -279,6 +282,12 @@ final class CardsView: NSView, NSViewToolTipOwner {
             let range = model.settings.activityRange
             activityCards = model.settings.enabledProviders.sorted().map { ap.card($0, aggregates: aggregates, range: range, selection: selection) }
             weeks = model.settings.enabledProviders.sorted().map { pastWeeks($0, presenter: presenter) }
+            sessionHistories = model.settings.enabledProviders.sorted().compactMap { p in
+                let input = model.paceInput(p)
+                guard let reading = input.reading, reading.session != nil else { return nil }
+                let sessions = model.history.account(p, reading.accountKey)?.recentSessions(now: now) ?? []
+                return SessionHistoryRenderer.model(p, sessions: sessions, warnAt: model.settings.sessionWarnAt, now: now)
+            }
         }
         if animated, states != lastStates, !lastStates.isEmpty, window != nil { beginFade() }
         contentHeight = measure()
@@ -398,6 +407,18 @@ final class CardsView: NSView, NSViewToolTipOwner {
         if weeks.contains(where: { !$0.collecting }) {
             if let ctx { PastWeeksRenderer.drawLegend(x: pad, y: y, width: cw, theme: t, ctx: ctx) }
             y += PastWeeksRenderer.legendHeight
+        }
+        if !sessionHistories.isEmpty {
+            y += 6
+            if let ctx { SessionHistoryRenderer.drawSectionHeader(x: pad, y: y, width: cw, warnAt: model.settings.sessionWarnAt, theme: t, ctx: ctx) }
+            y += SessionHistoryRenderer.sectionHeaderHeight
+            for (i, sh) in sessionHistories.enumerated() {
+                if i > 0 { y += 10 }
+                let h = SessionHistoryRenderer.draw(sh, origin: CGPoint(x: pad, y: y), width: cw, theme: t, ctx: ctx, out: ctx == nil ? nil : out)
+                cardRects.append((sh.provider, CGRect(x: pad, y: y, width: cw, height: h)))
+                y += h
+            }
+            y += 4
         }
         return y + 2
     }
@@ -580,7 +601,7 @@ struct ShareFactory {
     func shares() -> [ShareModel] {
         let now = Date()
         let ap = ActivityPresenter(now: now, pricing: model.pricingEngine)
-        let presenter = Presenter(now: now)
+        let presenter = model.presenter(now: now)
         let aggregates = model.aggregates()
         let range = model.settings.activityRange
         return model.settings.enabledProviders.sorted().map { p in

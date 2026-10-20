@@ -38,6 +38,23 @@ import HeadroomKit
         return (code, lines.joined(separator: "\n"))
     }
 
+    @Test func sessionForecastLines() {
+        let style = Style(colors: false)
+        let cal = Calendar(identifier: .gregorian)
+        let loc = Locale(identifier: "en_US")
+        let runsOut = SessionSnapshot(used: 0.5, left: 0.5, resetsAt: now.addingTimeInterval(3 * 3600), level: "normal",
+                                      outlook: "runs_out", runsOutAt: now.addingTimeInterval(3600), leftAtReset: 0)
+        #expect(Summary.sessionLine(runsOut, style: style, now: now, calendar: cal, locale: loc)?.contains("5-hour session 50% left · runs out ~") == true)
+        #expect(Summary.sessionLine(runsOut, style: style, now: now, calendar: cal, locale: loc)?.hasSuffix("2h early") == true)
+        let calm = SessionSnapshot(used: 0.2, left: 0.8, resetsAt: now.addingTimeInterval(3600), level: "normal", outlook: "comfortable", leftAtReset: 0.6)
+        #expect(Summary.sessionLine(calm, style: style, now: now, calendar: cal, locale: loc)?.hasSuffix("~60% spare at this pace") == true)
+        let idle = SessionSnapshot(used: 0, left: 1, resetsAt: nil, level: "normal", outlook: "idle")
+        #expect(Summary.sessionLine(idle, style: style, now: now, calendar: cal, locale: loc) == nil)
+        // Snapshots from older apps carry no outlook: only the warning, as before.
+        let old = SessionSnapshot(used: 0.2, left: 0.8, resetsAt: now.addingTimeInterval(3600), level: "normal")
+        #expect(Summary.sessionLine(old, style: style, now: now, calendar: cal, locale: loc) == nil)
+    }
+
     @Test func summaryMatchesTheMockupLayout() throws {
         let url = try write(snapshot())
         let (code, out) = run([], url: url)

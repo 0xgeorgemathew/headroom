@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: PopoverController!
     private var statusItem: StatusItemController!
     private var settingsWindow: SettingsWindowController?
+    private var onboarding: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings = AppSettings()
@@ -18,9 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let open: () -> Void = { [weak self] in self?.showSettings() }
         popover.openSettings = open
         statusItem.openSettings = open
+        statusItem.openWelcome = { [weak self] in self?.showOnboarding() }
         model.onChange = { [weak self] in
             self?.statusItem.update()
             self?.popover.refresh()
+            self?.onboarding?.refresh()
+            self?.settingsWindow?.refresh()
         }
         settings.onChange = { [weak self] in
             self?.model.settingsChanged()
@@ -38,6 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.popover.close() }
                 }
             }
+        }
+        // First launch (or `--welcome`): the welcome window, once the menu bar item is in place.
+        if !settings.onboardingCompleted || args.contains("--welcome") {
+            let step = args.firstIndex(of: "--welcome-step").flatMap { $0 + 1 < args.count ? Int(args[$0 + 1]) : nil } ?? 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.showOnboarding(step: step) }
         }
         if args.contains("--open-settings") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showSettings() }
@@ -58,8 +67,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func showOnboarding(step: Int = 0) {
+        if onboarding == nil {
+            let controller = OnboardingWindowController(settings: settings, model: model)
+            controller.onFinish = { [weak self] completed in
+                guard let self else { return }
+                self.onboarding = nil
+                self.settingsWindow?.refresh()
+                // Show where Headroom lives.
+                if completed, let button = self.statusItem.item.button {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.popover.show(relativeTo: button) }
+                }
+            }
+            onboarding = controller
+        }
+        onboarding?.show(step: step)
+    }
+
     func showSettings() {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController(settings: settings, model: model) }
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(settings: settings, model: model)
+            settingsWindow?.openWelcome = { [weak self] in self?.showOnboarding() }
+        }
         NSApp.activate()
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)

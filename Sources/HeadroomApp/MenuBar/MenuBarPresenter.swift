@@ -38,14 +38,35 @@ extension Presenter {
                 warning = .init(level: s.level, used: s.used, countdown: TimeFormat.compact(r.timeIntervalSince(now)))
             }
         }
-        var spoken = "\(input.provider.displayName): \(Int((a.remaining * 100).rounded())) percent left, \(a.rule == .exhausted ? "limit reached" : state.title.lowercased()), "
+        // Settings: the ring and countdown for any running session, not only a warning.
+        let forecast = SessionForecast(window: reading.session, samples: input.samples[LimitWindow.sessionID()] ?? [], now: now)
+        if warning == nil, options.alwaysShowSessionTimer, forecast.isActive, let s = session, let r = s.resetsAt {
+            warning = .init(level: s.level, used: s.used, countdown: TimeFormat.compact(r.timeIntervalSince(now)))
+        }
+        // Settings: what the five cells measure.
+        let showsSession: Bool = switch options.meterFocus {
+        case .week: false
+        case .session: reading.session != nil
+        case .tighter: forecast.isActive && a.rule != .exhausted && (forecast.pacingState > state || (session?.level ?? .normal) >= .amber)
+        }
+        var cells = a.cells, shownState = state, hourglass = a.hourglass, left = a.remaining
+        if showsSession {
+            cells = forecast.isActive ? PacingEngine.cells(remaining: forecast.remaining) : 5
+            shownState = forecast.pacingState
+            hourglass = false
+            left = forecast.remaining
+        }
+        var spoken = "\(input.provider.displayName): \(Int((a.remaining * 100).rounded())) percent left this week, \(a.rule == .exhausted ? "limit reached" : state.title.lowercased()), "
         spoken += TimeFormat.renewalCaption(a.resetsAt, now: now, calendar: calendar, locale: locale) + "."
+        if showsSession { spoken += " The meter shows the 5-hour session: \(Int((forecast.remaining * 100).rounded())) percent left." }
         if let w = warning, let s = session { spoken += " 5-hour session \(Int((s.remaining * 100).rounded())) percent left, resets in \(w.countdown)." }
         if let b = blocked { spoken += " Blocked, back in \(b)." }
         if input.fault != nil { spoken += " Showing the last reading." }
-        let model = MenuBarProviderModel(provider: input.provider, state: state, cells: a.cells, hourglass: a.hourglass,
+        let model = MenuBarProviderModel(provider: input.provider, state: shownState, cells: cells, hourglass: hourglass,
                                          session: blocked == nil ? warning : nil, blockedCountdown: blocked,
-                                         fault: input.fault != nil, spoken: spoken)
+                                         fault: input.fault != nil, spoken: spoken,
+                                         percent: options.showPercent ? "\(Int((left * 100).rounded()))%" : nil,
+                                         tracksSession: showsSession)
         return (model, urgency)
     }
 

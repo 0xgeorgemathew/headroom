@@ -21,6 +21,7 @@ struct PersistedState: Codable, Sendable {
 @MainActor
 final class AppModel {
     let settings: AppSettings
+    private let notifier: Notifier
     private(set) var history = HistoryStore()
     private(set) var faults: [Provider: FaultMachine] = [:]
     private(set) var buckets = UsageBuckets()
@@ -57,6 +58,7 @@ final class AppModel {
 
     init(settings: AppSettings) {
         self.settings = settings
+        notifier = Notifier(settings: settings)
         let persisted = PlistStore<PersistedState>.standard(named: "state.plist").load() ?? PersistedState()
         history = persisted.history
         codexAccountKey = persisted.codexAccountKey
@@ -380,7 +382,13 @@ final class AppModel {
     private func changed() {
         onChange?()
         writeSnapshot()
+        notify()
         armMinuteTimer()
+    }
+
+    private func notify() {
+        guard firstScanDone else { return }
+        notifier.evaluate(paceInputs(), presenter: presenter(now: Date()))
     }
 
     /// While a countdown is visible (session warning, blocked) or the popover is open, redraw once a minute.
@@ -392,6 +400,7 @@ final class AppModel {
                     guard let self else { return }
                     self.onChange?()
                     self.writeSnapshot()
+                    self.notify()
                     if !(self.popoverOpen || self.menuBarHasCountdown()) { self.minuteTimer?.invalidate(); self.minuteTimer = nil }
                 }
             }
@@ -405,11 +414,16 @@ final class AppModel {
     }
 
     private func menuBarHasCountdown() -> Bool {
-        let p = Presenter(now: Date())
+        let p = presenter(now: Date())
         return paceInputs().compactMap { p.menuBar($0)?.model }.contains { $0.session != nil || $0.blockedCountdown != nil }
     }
 
     // MARK: Presentation input
+
+    /// A presenter with the user's 5-hour threshold and display options.
+    func presenter(now: Date) -> Presenter {
+        Presenter(now: now, policy: settings.policy, options: settings.presentation)
+    }
 
     func paceInput(_ p: Provider) -> PaceInput {
         let machine = faults[p]
@@ -418,7 +432,10 @@ final class AppModel {
         input.fault = machine?.fault
         if let reading {
             let acct = history.account(p, reading.accountKey)
-            if let acct { input.samples = acct.windows.mapValues(\.samples) }
+            if let acct {
+                input.samples = acct.windows.mapValues(\.samples)
+                if let session = acct.session { input.samples[LimitWindow.sessionID()] = session.samples }
+            }
             input.smoothedState = acct?.tracker?.shown
             if let early = acct?.earlyResetAt, let start = reading.headline?.windowStart, early >= start { input.earlyResetAt = early }
             if let start = reading.headline?.windowStart {

@@ -8,6 +8,7 @@ final class StatusItemController: NSObject {
     private let model: AppModel
     private let popover: PopoverController
     var openSettings: (() -> Void)?
+    var openWelcome: (() -> Void)?
     private var lastKey: [MenuBarProviderModel]?
     private var lastAppearanceDark: Bool?
     private var lastScale: CGFloat = 0
@@ -31,7 +32,7 @@ final class StatusItemController: NSObject {
     }
 
     func update(now: Date = Date(), force: Bool = false) {
-        let presenter = Presenter(now: now)
+        let presenter = model.presenter(now: now)
         let items = presenter.menuBarItems(model.paceInputs(), mode: model.settings.menuBarMode,
                                            enabled: model.settings.enabledProviders, majorOutage: model.majorOutages)
         guard let button = item.button else { return }
@@ -73,6 +74,7 @@ final class StatusItemController: NSObject {
         menu.addItem(withTitle: "Refresh Now", action: #selector(refresh), keyEquivalent: "r").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Welcome Tour…", action: #selector(welcome), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Headroom", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
@@ -83,4 +85,5 @@ final class StatusItemController: NSObject {
     @objc private func openPopover() { if let b = item.button { popover.show(relativeTo: b) } }
     @objc private func refresh() { model.refreshNow() }
     @objc private func settings() { openSettings?() }
+    @objc private func welcome() { openWelcome?() }
 }

@@ -2,147 +2,97 @@ import AppKit
 import HeadroomCore
 import HeadroomKit
 import ServiceManagement
+import UserNotifications
 
-/// Settings (PLAN §9, completion list): providers, menu bar mode, plan prices, status checks,
-/// cost on shares, launch at login, CLI install and CLI path overrides.
+/// Settings: a standard macOS preferences window with one tab per area. Every control writes
+/// through to `AppSettings` at once, and re-syncs when something else (the welcome window) changes it.
 @MainActor
 final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let settings: AppSettings
     private let model: AppModel
-    private var claudeToggle: NSButton!
-    private var codexToggle: NSButton!
-    private var modePopup: NSPopUpButton!
+    var openWelcome: (() -> Void)?
+    /// Each control's "read the current value back" closure.
+    private var syncers: [() -> Void] = []
+    private var targets: [ActionTarget] = []
     private var priceFields: [Provider: NSTextField] = [:]
-    private var statusToggle: NSButton!
-    private var costToggle: NSButton!
-    private var loginToggle: NSButton!
-    private var cliStatus: NSTextField!
     private var pathFields: [String: NSTextField] = [:]
+    private var cliStatus: NSTextField!
+    private var notifyStatus: NSTextField!
 
     init(settings: AppSettings, model: AppModel) {
         self.settings = settings
         self.model = model
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Headroom Settings"
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        let window = NSWindow(contentViewController: tabs)
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        window.contentView = buildContent()
+        for (title, symbol, view) in [("General", "gearshape", general()), ("Menu Bar", "menubar.rectangle", menuBar()),
+                                       ("5-Hour Session", "timer", session()), ("Notifications", "bell.badge", notifications()),
+                                       ("Advanced", "slider.horizontal.3", advanced())] {
+            let vc = NSViewController()
+            vc.view = view
+            vc.title = title
+            vc.preferredContentSize = view.fittingSize
+            let item = NSTabViewItem(viewController: vc)
+            item.label = title
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            tabs.addTabViewItem(item)
+        }
+        window.title = "General"
         window.center()
         refreshCLIStatus()
+        refreshNotificationStatus()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: Layout
-
-    private func section(_ title: String) -> NSTextField {
-        let l = NSTextField(labelWithString: title)
-        l.font = .systemFont(ofSize: 13, weight: .semibold)
-        return l
+    /// Settings or readings changed elsewhere.
+    func refresh() {
+        for sync in syncers { sync() }
     }
 
-    private func note(_ text: String) -> NSTextField {
-        let l = NSTextField(wrappingLabelWithString: text)
-        l.font = .systemFont(ofSize: 11)
-        l.textColor = .secondaryLabelColor
-        l.preferredMaxLayoutWidth = 460
-        return l
-    }
+    // MARK: Building blocks
 
-    private func check(_ title: String, _ on: Bool, _ action: Selector) -> NSButton {
-        let b = NSButton(checkboxWithTitle: title, target: self, action: action)
-        b.state = on ? .on : .off
-        return b
-    }
-
-    private func buildContent() -> NSView {
-        let stack = NSStackView()
+    private func page(_ rows: [NSView]) -> NSView {
+        let stack = NSStackView(views: rows)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
-
-        // Providers
-        stack.addArrangedSubview(section("Providers"))
-        let enabled = settings.enabledProviders
-        claudeToggle = check("Claude", enabled.contains(.claude), #selector(providersChanged))
-        codexToggle = check("Codex", enabled.contains(.codex), #selector(providersChanged))
-        stack.addArrangedSubview(row([claudeToggle, codexToggle]))
-        stack.setCustomSpacing(16, after: stack.arrangedSubviews.last!)
-
-        // Menu bar
-        stack.addArrangedSubview(section("Menu bar"))
-        modePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        for m in MenuBarMode.allCases { modePopup.addItem(withTitle: m.title) }
-        modePopup.selectItem(at: MenuBarMode.allCases.firstIndex(of: settings.menuBarMode) ?? 0)
-        modePopup.target = self
-        modePopup.action = #selector(modeChanged)
-        stack.addArrangedSubview(row([NSTextField(labelWithString: "Show:"), modePopup]))
-        stack.addArrangedSubview(note("Both providers take about 150 pt. Beside the notch macOS hides items that don't fit, so “Most urgent” shows only the provider that needs attention."))
-        stack.setCustomSpacing(16, after: stack.arrangedSubviews.last!)
-
-        // Plan price
-        stack.addArrangedSubview(section("Plan price"))
-        for p in Provider.allCases {
-            let field = NSTextField(string: settings.planPriceOverride(p).map { String(format: "%.0f", $0) } ?? "")
-            field.placeholderString = listPrice(p).map { "\(Int($0)) (list price)" } ?? "monthly USD"
-            field.delegate = self
-            field.widthAnchor.constraint(equalToConstant: 140).isActive = true
-            priceFields[p] = field
-            let label = NSTextField(labelWithString: "\(p.displayName) per month, USD:")
-            label.widthAnchor.constraint(equalToConstant: 190).isActive = true
-            stack.addArrangedSubview(row([label, field]))
-        }
-        stack.addArrangedSubview(note("Used for “× plan” next to this week's cost at API rates. Leave empty to use the plan's list price."))
-        stack.setCustomSpacing(16, after: stack.arrangedSubviews.last!)
-
-        // Status, sharing, login
-        stack.addArrangedSubview(section("General"))
-        statusToggle = check("Check service status (status.claude.com, status.openai.com)", settings.statusChecks, #selector(statusChanged))
-        costToggle = check("Show cost on share cards", settings.costOnShares, #selector(costChanged))
-        loginToggle = check("Launch at login", SMAppService.mainApp.status == .enabled, #selector(loginChanged))
-        stack.addArrangedSubview(statusToggle)
-        stack.addArrangedSubview(costToggle)
-        stack.addArrangedSubview(loginToggle)
-        stack.setCustomSpacing(16, after: loginToggle)
-
-        // CLI
-        stack.addArrangedSubview(section("Command line"))
-        let install = NSButton(title: "Install command line tool", target: self, action: #selector(installCLI))
-        cliStatus = NSTextField(wrappingLabelWithString: "")
-        cliStatus.font = .systemFont(ofSize: 11)
-        cliStatus.textColor = .secondaryLabelColor
-        cliStatus.preferredMaxLayoutWidth = 280
-        stack.addArrangedSubview(row([install, cliStatus]))
-        for tool in ["claude", "codex"] {
-            let field = NSTextField(string: settings.cliPath(tool) ?? "")
-            field.placeholderString = "auto-detect"
-            field.delegate = self
-            field.widthAnchor.constraint(equalToConstant: 250).isActive = true
-            pathFields[tool] = field
-            let choose = NSButton(title: "Choose…", target: self, action: tool == "claude" ? #selector(chooseClaude) : #selector(chooseCodex))
-            let label = NSTextField(labelWithString: "\(tool) path:")
-            label.widthAnchor.constraint(equalToConstant: 90).isActive = true
-            stack.addArrangedSubview(row([label, field, choose]))
-        }
-        stack.addArrangedSubview(note("Headroom finds the Claude Code and Codex CLIs through your login shell. Set a path here if it can't."))
-        stack.setCustomSpacing(16, after: stack.arrangedSubviews.last!)
-
-        let pricing = NSButton(title: "Show pricing.override.json", target: self, action: #selector(revealPricing))
-        pricing.bezelStyle = .inline
-        stack.addArrangedSubview(row([note("API rates as of \(model.pricingEngine.asOf). Add or replace model prices in an override file."), pricing]))
-
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 22, left: 30, bottom: 24, right: 30)
+        stack.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView()
         container.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            container.widthAnchor.constraint(equalToConstant: 540),
+            container.widthAnchor.constraint(equalToConstant: 560),
         ])
         return container
+    }
+
+    private func header(_ title: String) -> NSTextField {
+        let l = NSTextField(labelWithString: title)
+        l.font = .systemFont(ofSize: 13, weight: .semibold)
+        return l
+    }
+
+    private func note(_ text: String, width: CGFloat = 500) -> NSTextField {
+        let l = NSTextField(wrappingLabelWithString: text)
+        l.font = .systemFont(ofSize: 11)
+        l.textColor = .secondaryLabelColor
+        l.preferredMaxLayoutWidth = width
+        return l
+    }
+
+    private func spacer(_ h: CGFloat = 8) -> NSView {
+        let v = NSView()
+        v.heightAnchor.constraint(equalToConstant: h).isActive = true
+        return v
     }
 
     private func row(_ views: [NSView]) -> NSStackView {
@@ -153,34 +103,167 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         return r
     }
 
+    /// A label column so popups line up like System Settings.
+    private func labeled(_ label: String, _ control: NSView) -> NSStackView {
+        let l = NSTextField(labelWithString: label)
+        l.alignment = .right
+        l.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        return row([l, control])
+    }
+
+    private func check(_ title: String, get: @escaping () -> Bool, set: @escaping (Bool) -> Void) -> NSButton {
+        let target = ActionTarget()
+        let b = NSButton(checkboxWithTitle: title, target: target, action: #selector(ActionTarget.fire(_:)))
+        target.handler = { sender in set((sender as? NSButton)?.state == .on) }
+        targets.append(target)
+        let sync: () -> Void = { [weak b] in b?.state = get() ? .on : .off }
+        sync()
+        syncers.append(sync)
+        return b
+    }
+
+    private func popup<T: Equatable>(_ options: [(String, T)], get: @escaping () -> T, set: @escaping (T) -> Void) -> NSPopUpButton {
+        let target = ActionTarget()
+        let p = NSPopUpButton(frame: .zero, pullsDown: false)
+        for (title, _) in options { p.addItem(withTitle: title) }
+        p.target = target
+        p.action = #selector(ActionTarget.fire(_:))
+        target.handler = { sender in
+            guard let i = (sender as? NSPopUpButton)?.indexOfSelectedItem, i >= 0, i < options.count else { return }
+            set(options[i].1)
+        }
+        targets.append(target)
+        let sync: () -> Void = { [weak p] in p?.selectItem(at: options.firstIndex { $0.1 == get() } ?? 0) }
+        sync()
+        syncers.append(sync)
+        return p
+    }
+
+    private func button(_ title: String, _ action: @escaping () -> Void) -> NSButton {
+        let target = ActionTarget()
+        target.handler = { _ in action() }
+        targets.append(target)
+        return NSButton(title: title, target: target, action: #selector(ActionTarget.fire(_:)))
+    }
+
+    // MARK: Tabs
+
+    private func general() -> NSView {
+        let s = settings
+        var rows: [NSView] = [header("Providers")]
+        rows.append(row([
+            check("Claude", get: { s.enabledProviders.contains(.claude) }, set: { on in var p = s.enabledProviders; if on { p.insert(.claude) } else { p.remove(.claude) }; s.enabledProviders = p }),
+            check("Codex", get: { s.enabledProviders.contains(.codex) }, set: { on in var p = s.enabledProviders; if on { p.insert(.codex) } else { p.remove(.codex) }; s.enabledProviders = p }),
+        ]))
+        rows.append(spacer())
+        rows.append(header("Appearance"))
+        rows.append(labeled("Popover and welcome:", popup(AppAppearance.allCases.map { ($0.title, $0) }, get: { s.appearance }, set: { s.appearance = $0 })))
+        rows.append(spacer())
+        rows.append(header("General"))
+        let login = check("Launch at login", get: { SMAppService.mainApp.status == .enabled }, set: { on in
+            do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } } catch { NSSound.beep() }
+        })
+        rows.append(login)
+        rows.append(check("Check service status (status.claude.com, status.openai.com)", get: { s.statusChecks }, set: { s.statusChecks = $0 }))
+        rows.append(check("Show cost on share cards", get: { s.costOnShares }, set: { s.costOnShares = $0 }))
+        rows.append(spacer())
+        rows.append(row([button("Show Welcome Tour…") { [weak self] in self?.openWelcome?() },
+                         note("Walk through the setup again.", width: 300)]))
+        return page(rows)
+    }
+
+    private func menuBar() -> NSView {
+        let s = settings
+        var rows: [NSView] = [header("Menu bar")]
+        rows.append(labeled("Show:", popup(MenuBarMode.allCases.map { ($0.title, $0) }, get: { s.menuBarMode }, set: { s.menuBarMode = $0 })))
+        rows.append(labeled("The meter tracks:", popup(MeterFocus.allCases.map { ($0.title, $0) }, get: { s.meterFocus }, set: { s.meterFocus = $0 })))
+        rows.append(note("“5-hour session” fills the five cells from the session instead of the week; a small 5H tag marks it. “Whichever is tighter” switches over only while the session is the closer limit."))
+        rows.append(spacer(4))
+        rows.append(check("Show the percentage left beside each meter", get: { s.showPercentInMenuBar }, set: { s.showPercentInMenuBar = $0 }))
+        rows.append(check("Always show the 5-hour timer while a session runs", get: { s.alwaysShowSessionTimer }, set: { s.alwaysShowSessionTimer = $0 }))
+        rows.append(spacer(4))
+        rows.append(note("Both providers take about 150 pt. Beside the notch macOS hides items that don't fit, so “Most urgent” shows only the provider that needs attention."))
+        return page(rows)
+    }
+
+    private func session() -> NSView {
+        let s = settings
+        var rows: [NSView] = [header("5-hour session")]
+        let warn = AppSettings.sessionWarnChoices.map { ("At \(Int(($0 * 100).rounded()))% used", $0) }
+        rows.append(labeled("Warn me:", popup(warn, get: {
+            AppSettings.sessionWarnChoices.min { abs($0 - s.sessionWarnAt) < abs($1 - s.sessionWarnAt) } ?? 0.75
+        }, set: { s.sessionWarnAt = $0 })))
+        rows.append(note("From this point the session turns amber, shows a countdown in the menu bar and, if you like, sends a notification. It turns rose at 90% (or a little after your warning, if that's later)."))
+        rows.append(spacer(4))
+        rows.append(labeled("On each card:", popup(SessionDetail.allCases.map { ($0 == .detailed ? "Detailed, with a forecast" : "Compact row", $0) },
+                                                   get: { s.sessionDetail }, set: { s.sessionDetail = $0 })))
+        rows.append(note("Detailed shows the session's timeline and where your recent pace takes it: whether it lasts to the reset, or when it runs out. Compact keeps a single row until the warning."))
+        rows.append(spacer(4))
+        rows.append(note("The Activity tab lists your recent sessions and which ones hit the limit. In Terminal, `headroom` prints the session forecast and `headroom wait` waits for a used-up session to come back."))
+        return page(rows)
+    }
+
+    private func notifications() -> NSView {
+        let s = settings
+        var rows: [NSView] = [header("Notify me when")]
+        for kind in NotificationKind.allCases {
+            rows.append(check(kind.title, get: { s.notifies(kind) }, set: { [weak self] on in
+                s.setNotifies(kind, on)
+                if on { Notifier.requestAuthorization { _ in self?.refreshNotificationStatus() } }
+            }))
+        }
+        rows.append(spacer(4))
+        notifyStatus = note("")
+        rows.append(notifyStatus)
+        rows.append(row([button("Open Notification Settings…") {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+        }]))
+        return page(rows)
+    }
+
+    private func advanced() -> NSView {
+        var rows: [NSView] = [header("Plan price")]
+        for p in Provider.allCases {
+            let field = NSTextField(string: settings.planPriceOverride(p).map { String(format: "%.0f", $0) } ?? "")
+            field.placeholderString = listPrice(p).map { "\(Int($0)) (list price)" } ?? "monthly USD"
+            field.delegate = self
+            field.widthAnchor.constraint(equalToConstant: 140).isActive = true
+            priceFields[p] = field
+            rows.append(labeled("\(p.displayName) per month, USD:", field))
+        }
+        rows.append(note("Used for “× plan” next to this week's cost at API rates. Leave empty to use the plan's list price."))
+        rows.append(spacer())
+        rows.append(header("Command line"))
+        cliStatus = note("", width: 300)
+        rows.append(row([button("Install command line tool") { [weak self] in
+            let result = CLIInstaller.install()
+            self?.cliStatus.stringValue = result
+            self?.refreshCLIStatus(after: result)
+        }, cliStatus]))
+        for tool in ["claude", "codex"] {
+            let field = NSTextField(string: settings.cliPath(tool) ?? "")
+            field.placeholderString = "auto-detect"
+            field.delegate = self
+            field.widthAnchor.constraint(equalToConstant: 250).isActive = true
+            pathFields[tool] = field
+            let label = NSTextField(labelWithString: "\(tool) path:")
+            label.alignment = .right
+            label.widthAnchor.constraint(equalToConstant: 150).isActive = true
+            rows.append(row([label, field, button("Choose…") { [weak self] in self?.choose(tool) }]))
+        }
+        rows.append(note("Headroom finds the Claude Code and Codex CLIs through your login shell. Set a path here if it can't."))
+        rows.append(spacer())
+        let pricing = button("Show pricing.override.json") { [weak self] in self?.revealPricing() }
+        pricing.bezelStyle = .inline
+        rows.append(row([note("API rates as of \(model.pricingEngine.asOf). Add or replace model prices in an override file.", width: 330), pricing]))
+        return page(rows)
+    }
+
     private func listPrice(_ p: Provider) -> Double? {
         model.faults[p]?.lastGood?.plan?.monthlyPriceUSD
     }
 
     // MARK: Actions
-
-    @objc private func providersChanged() {
-        var set = Set<Provider>()
-        if claudeToggle.state == .on { set.insert(.claude) }
-        if codexToggle.state == .on { set.insert(.codex) }
-        settings.enabledProviders = set
-    }
-
-    @objc private func modeChanged() {
-        settings.menuBarMode = MenuBarMode.allCases[max(modePopup.indexOfSelectedItem, 0)]
-    }
-
-    @objc private func statusChanged() { settings.statusChecks = statusToggle.state == .on }
-    @objc private func costChanged() { settings.costOnShares = costToggle.state == .on }
-
-    @objc private func loginChanged() {
-        do {
-            if loginToggle.state == .on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch {
-            loginToggle.state = SMAppService.mainApp.status == .enabled ? .on : .off
-            NSSound.beep()
-        }
-    }
 
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
@@ -194,9 +277,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         }
     }
 
-    @objc private func chooseClaude() { choose("claude") }
-    @objc private func chooseCodex() { choose("codex") }
-
     private func choose(_ tool: String) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -209,12 +289,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         settings.setCLIPath(url.path, for: tool)
     }
 
-    @objc private func installCLI() {
-        let result = CLIInstaller.install()
-        cliStatus.stringValue = result
-        refreshCLIStatus(after: result)
-    }
-
     private func refreshCLIStatus(after message: String? = nil) {
         Task {
             let status = await CLIInstaller.status()
@@ -222,7 +296,24 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         }
     }
 
-    @objc private func revealPricing() {
+    private func refreshNotificationStatus() {
+        guard Notifier.available else {
+            notifyStatus.stringValue = "Notifications need Headroom.app (this build runs outside an app bundle)."
+            return
+        }
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            let status = s.authorizationStatus
+            Task { @MainActor in
+                self.notifyStatus.stringValue = switch status {
+                case .denied: "Notifications are turned off for Headroom in System Settings."
+                case .notDetermined: "macOS asks for permission the first time you turn one on."
+                default: "Each alert fires once per session or week. Headroom never repeats itself."
+                }
+            }
+        }
+    }
+
+    private func revealPricing() {
         let url = PriceTable.defaultOverrideURL
         if !FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -231,6 +322,13 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
+}
+
+/// Closure target for AppKit controls.
+@MainActor
+final class ActionTarget: NSObject {
+    var handler: ((Any?) -> Void)?
+    @objc func fire(_ sender: Any?) { handler?(sender) }
 }
 
 /// Installs `headroom` into `~/.local/bin` (symlink into the app) and its man page.
