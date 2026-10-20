@@ -30,10 +30,8 @@ enum Summary {
             } else {
                 lines.append("  ↳ " + style.paint(state.word, Style.hex(for: state)) + " · " + verdictDetail(w, now: now, calendar: calendar, locale: locale))
             }
-            if let sess = p.session, sess.sessionLevel >= .amber, sess.sessionLevel < .blocked {
-                var text = "⚠ 5-hour session \(Int((sess.left * 100).rounded()))% left"
-                if let r = sess.resetsAt { text += " · resets \(TimeFormat.shortClock(r, calendar: calendar, locale: locale))" }
-                lines.append("  ↳ " + style.paint(text, Style.hex(for: sess.sessionLevel)))
+            if let sess = p.session, sess.sessionLevel < .blocked, let line = sessionLine(sess, style: style, now: now, calendar: calendar, locale: locale) {
+                lines.append("  ↳ " + line)
             }
             for cap in p.caps where cap.used >= 1 {
                 var text = "\(cap.label) cap reached"
@@ -57,6 +55,29 @@ enum Summary {
             lines.append(style.dim("(Headroom isn't running · snapshot \(TimeFormat.compact(now.timeIntervalSince(s.generatedAt))) old)"))
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The 5-hour session: a warning from the user's threshold, a heads-up when the recent pace
+    /// runs it out before the reset, and a quiet line otherwise. Nothing while no session runs.
+    static func sessionLine(_ sess: SessionSnapshot, style: Style, now: Date, calendar: Calendar, locale: Locale) -> String? {
+        if sess.outlook == "idle" { return nil }
+        let left = "\(Int((sess.left * 100).rounded()))% left"
+        let resets = sess.resetsAt.map { " · resets \(TimeFormat.shortClock($0, calendar: calendar, locale: locale))" } ?? ""
+        var runsOut = ""
+        if let out = sess.runsOutAt {
+            runsOut = " · runs out ~\(TimeFormat.shortClock(out, calendar: calendar, locale: locale))"
+            if let r = sess.resetsAt { runsOut += ", \(TimeFormat.compact(r.timeIntervalSince(out))) early" }
+        }
+        if sess.sessionLevel >= .amber {
+            return style.paint("⚠ 5-hour session \(left)\(resets)\(runsOut)", Style.hex(for: sess.sessionLevel))
+        }
+        if !runsOut.isEmpty {
+            return style.paint("5-hour session \(left)\(runsOut)", 0xFFC248)
+        }
+        guard sess.outlook != nil else { return nil } // older apps: only the warning, as before
+        var text = "5-hour session \(left)\(resets)"
+        if let l = sess.leftAtReset, l >= 0.01 { text += " · ~\(Int((l * 100).rounded()))% spare at this pace" }
+        return style.dim(text)
     }
 
     static func verdictDetail(_ w: WeeklySnapshot, now: Date, calendar: Calendar, locale: Locale) -> String {

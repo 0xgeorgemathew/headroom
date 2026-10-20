@@ -32,6 +32,14 @@ enum PaceCardRenderer {
             y += h
         }
 
+        // The detailed 5-hour panel takes the banner's place once it warns.
+        if let s = m.sessionModule, s.onTop {
+            y += 12
+            let h = sessionModuleHeight(s, width: w)
+            if let ctx { drawSessionModule(s, rect: CGRect(x: x0, y: y, width: w, height: h), theme: theme, ctx: ctx) }
+            y += h
+        }
+
         // Fault banner replaces the callout; shown high so the reason is never missed.
         if let f = m.fault {
             y += 12
@@ -72,6 +80,14 @@ enum PaceCardRenderer {
         if let v = m.verdict {
             y += 10
             y += drawVerdict(v, x: x0, y: y, w: w, theme: theme, ctx: ctx)
+        }
+
+        // The 5-hour panel while it's quiet: after the week's verdict.
+        if let s = m.sessionModule, !s.onTop {
+            y += 12
+            let h = sessionModuleHeight(s, width: w)
+            if let ctx { drawSessionModule(s, rect: CGRect(x: x0, y: y, width: w, height: h), theme: theme, ctx: ctx) }
+            y += h
         }
 
         // 7. Callout (at most one).
@@ -156,6 +172,149 @@ enum PaceCardRenderer {
         Text(s.countdown, F.sf(17, 700, tabular: true), c).draw(x: right, baseline: rect.minY + 9 + 15, align: .right, in: ctx)
         Text(s.caption.uppercased(), F.sf(8.5, 650), c.fade(0.75), kern: 0.765)
             .draw(x: right + 0.765, baseline: rect.minY + 9 + 15 + 3 + 9.5, align: .right, in: ctx)
+    }
+
+    // MARK: Session module
+
+    static func sessionForecastBlock(_ s: SessionModuleModel, width: CGFloat, color: NSColor) -> TextBlock {
+        TextBlock(s.forecast, F.sf(12, 450), color, width: width - 24 - 13, lineHeight: 16)
+    }
+
+    static func sessionModuleHeight(_ s: SessionModuleModel, width: CGFloat) -> CGFloat {
+        let forecast = sessionForecastBlock(s, width: width, color: .black).height
+        let timeline: CGFloat = s.outlook == .idle ? 0 : 6 + 6 + 5 + 10
+        return 48 + timeline + 9 + forecast + 12
+    }
+
+    static func drawSessionModule(_ s: SessionModuleModel, rect: CGRect, theme: Theme, ctx: CGContext) {
+        let warn = s.level >= .amber
+        let levelColor = theme.session(s.level)
+        let tone = theme.pacing(s.tone)
+        let shape = rounded(rect, 14)
+        if warn {
+            let base = s.level == .amber ? rgb(0xF4A51F) : rgb(0xEE3459)
+            let edge = s.level == .amber ? rgb(0xFFC248) : rgb(0xFF6982)
+            ctx.fillLinear(shape, [base.fade(theme.isDark ? 0.17 : 0.14), base.fade(theme.isDark ? 0.06 : 0.04)],
+                           from: CGPoint(x: rect.minX, y: rect.minY), to: CGPoint(x: rect.maxX, y: rect.maxY))
+            ctx.innerStroke(shape, edge.fade(theme.isDark ? 0.30 : 0.45), width: 1)
+        } else {
+            ctx.fill(shape, theme.groupFill)
+            ctx.innerStroke(shape, theme.groupBorder, width: 0.5)
+        }
+
+        // Ring, title and the countdown: the same grammar as the warning banner.
+        let ringColor = warn ? levelColor : (s.outlook == .idle ? theme.muted : tone.text)
+        let ringRect = CGRect(x: rect.minX + 11, y: rect.minY + 13, width: 22, height: 22)
+        let track = warn ? levelColor.fade(0.18) : (theme.isDark ? white(0.12) : black(0.09))
+        if s.level == .blocked {
+            Glyph.ring(in: ringRect, fraction: 1, color: levelColor, track: track, ctx: ctx)
+            Glyph.pause(in: CGRect(x: ringRect.midX - 3.4, y: ringRect.midY - 4, width: 6.8, height: 8), color: levelColor, ctx: ctx)
+        } else {
+            Glyph.ring(in: ringRect, fraction: CGFloat(s.used), color: ringColor, track: track, ctx: ctx)
+        }
+        let tx = ringRect.maxX + 10
+        let right = rect.maxX - 12
+        let countColor = warn ? levelColor : theme.ink
+        let count = Text(s.countdown, F.sf(17, 700, tabular: true), countColor, kern: -0.2)
+        count.draw(x: right, baseline: rect.minY + 9 + 15, align: .right, in: ctx)
+        let caption = Text(s.caption.uppercased(), F.sf(8.5, 650), (warn ? levelColor : theme.muted).fade(0.8), kern: 0.765)
+        caption.draw(x: right + 0.765, baseline: rect.minY + 9 + 15 + 3 + 9.5, align: .right, in: ctx)
+        // Narrow cards drop words rather than collide with the countdown.
+        let title = fit([s.title, s.title.replacingOccurrences(of: "5-hour session ", with: "Session ")], font: F.sf(12.5, 650),
+                        width: right - count.width - 10 - tx)
+        Text(title, F.sf(12.5, 650), warn ? levelColor : theme.ink)
+            .draw(x: tx, baseline: baseline(top: rect.minY + 9, font: F.sf(12.5, 650), lineHeight: 15), in: ctx)
+        let subtitle = fit([s.subtitle, s.subtitle.components(separatedBy: " · ").first ?? s.subtitle], font: F.sf(12, 400, tabular: true),
+                           width: right - caption.width - 10 - tx)
+        Text(subtitle, F.sf(12, 400, tabular: true), theme.muted)
+            .draw(x: tx, baseline: baseline(top: rect.minY + 9 + 15 + 1, font: F.sf(12), lineHeight: 14.4), in: ctx)
+
+        var y = rect.minY + 48
+        if s.outlook != .idle {
+            y += 6
+            drawSessionTimeline(s, rect: CGRect(x: rect.minX + 12, y: y, width: rect.width - 24, height: 6), warn: warn, theme: theme, ctx: ctx)
+            y += 6 + 5 + 10
+        }
+
+        // Forecast: a toned dot and one plain sentence.
+        y += 9
+        let block = sessionForecastBlock(s, width: rect.width, color: theme.ink.fade(0.86))
+        let dotColor = s.outlook == .idle ? theme.muted2 : (s.outlook == .blocked ? theme.rose : tone.text)
+        let dot = CGMutablePath()
+        dot.addEllipse(in: CGRect(x: rect.minX + 12, y: y + 8 - 3, width: 6, height: 6))
+        ctx.withState {
+            if s.outlook != .idle { ctx.setShadow(offset: .zero, blur: 6, color: dotColor.fade(0.8).cgColor) }
+            ctx.fill(dot, dotColor)
+        }
+        block.draw(x: rect.minX + 12 + 6 + 7, top: y, in: ctx)
+    }
+
+    /// The first candidate that fits `width`, else the last.
+    static func fit(_ candidates: [String], font: NSFont, width: CGFloat) -> String {
+        candidates.first { Text($0, font, .black).width <= width } ?? candidates.last ?? ""
+    }
+
+    /// The 5 hours as a track: used so far, where the recent burn takes it by the reset, and now.
+    static func drawSessionTimeline(_ s: SessionModuleModel, rect: CGRect, warn: Bool, theme: Theme, ctx: CGContext) {
+        let track = rounded(rect, 3)
+        ctx.fill(track, theme.isDark ? black(0.32) : black(0.07))
+        if theme.isDark { ctx.innerStroke(track, white(0.05), width: 0.5) }
+        let colors: (top: NSColor, bottom: NSColor, glow: NSColor) = {
+            switch s.level {
+            case .amber: return (rgb(0xFFDA7A), rgb(0xF4A51F), rgb(0xF4A51F, 0.5))
+            case .rose, .blocked: return (rgb(0xFF8FA2), rgb(0xEE3459), rgb(0xEE3459, 0.55))
+            case .normal:
+                let p = theme.pacing(s.tone)
+                return (p.top, p.bottom, p.glow)
+            }
+        }()
+        let usedW = rect.width * CGFloat(min(max(s.used, 0), 1))
+        if let p = s.projectedUsed, p > s.used + 0.005 {
+            let pr = CGRect(x: rect.minX + usedW - 3, y: rect.minY, width: rect.width * CGFloat(p - s.used) + 3, height: rect.height)
+            let shape = rounded(pr, 3)
+            ctx.fill(shape, colors.bottom.fade(theme.isDark ? 0.26 : 0.22))
+            // Striped like a forecast, not a fact.
+            ctx.withState {
+                ctx.addPath(shape); ctx.clip()
+                var x = pr.minX - rect.height
+                while x < pr.maxX {
+                    let stripe = CGMutablePath()
+                    stripe.move(to: CGPoint(x: x, y: pr.maxY)); stripe.addLine(to: CGPoint(x: x + rect.height, y: pr.minY))
+                    ctx.stroke(stripe, colors.bottom.fade(0.45), width: 1.2)
+                    x += 4
+                }
+            }
+        }
+        if usedW > 0.5 {
+            let fill = rounded(CGRect(x: rect.minX, y: rect.minY, width: max(usedW, rect.height), height: rect.height), 3)
+            ctx.glow(fill, color: colors.glow, blur: 7, base: colors.bottom)
+            ctx.fillVertical(fill, colors.top, colors.bottom)
+        }
+        // Now: where even pace would have the fill.
+        let nx = rect.minX + rect.width * CGFloat(min(max(s.elapsed, 0), 1))
+        let tick = rounded(CGRect(x: nx - 1, y: rect.minY - 3, width: 2, height: rect.height + 6), 1)
+        ctx.withState {
+            ctx.setShadow(offset: .zero, blur: 2, color: (theme.isDark ? black(0.6) : white(0.9)).cgColor)
+            ctx.fill(tick, theme.ink.fade(0.9))
+        }
+        let labelY = rect.maxY + 5 + 5
+        let labelColor = theme.chartLabel
+        let font = F.sf(8.5, 600, tabular: true)
+        var leftEdge = rect.minX, rightEdge = rect.maxX
+        if let start = s.startLabel {
+            let t = Text(start, font, labelColor)
+            t.draw(x: rect.minX, capCenter: labelY, in: ctx)
+            leftEdge = rect.minX + t.width
+        }
+        if let end = s.endLabel {
+            let t = Text(end, font, labelColor)
+            t.draw(x: rect.maxX, capCenter: labelY, align: .right, in: ctx)
+            rightEdge = rect.maxX - t.width
+        }
+        let now = Text("NOW", F.sf(8, 700), theme.ink.fade(0.62), kern: 0.6)
+        if nx - now.width / 2 > leftEdge + 6, nx + now.width / 2 < rightEdge - 6 {
+            now.draw(x: nx + 0.3, capCenter: labelY, align: .center, in: ctx)
+        }
     }
 
     // MARK: Hero

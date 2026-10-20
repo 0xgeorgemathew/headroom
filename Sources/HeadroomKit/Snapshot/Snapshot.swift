@@ -131,7 +131,16 @@ public struct SessionSnapshot: Codable, Sendable, Hashable {
     public var resetsAt: Date?
     /// normal · amber · rose · blocked
     public var level: String
-    public init(used: Double, left: Double, resetsAt: Date?, level: String) { self.used = used; self.left = left; self.resetsAt = resetsAt; self.level = level }
+    /// idle · comfortable · lasts · runs_out · blocked (absent in snapshots from older apps).
+    public var outlook: String?
+    /// When the session runs out at the recent burn, if before its reset.
+    public var runsOutAt: Date?
+    /// Share left at the reset at the recent burn.
+    public var leftAtReset: Double?
+    public init(used: Double, left: Double, resetsAt: Date?, level: String, outlook: String? = nil, runsOutAt: Date? = nil, leftAtReset: Double? = nil) {
+        self.used = used; self.left = left; self.resetsAt = resetsAt; self.level = level
+        self.outlook = outlook; self.runsOutAt = runsOutAt; self.leftAtReset = leftAtReset
+    }
 
     public var sessionLevel: SessionLevel {
         switch level { case "amber": .amber; case "rose": .rose; case "blocked": .blocked; default: .normal }
@@ -141,9 +150,15 @@ public struct SessionSnapshot: Codable, Sendable, Hashable {
         switch l { case .normal: "normal"; case .amber: "amber"; case .rose: "rose"; case .blocked: "blocked" }
     }
 
+    public static func outlookCode(_ o: SessionForecast.Outlook) -> String {
+        switch o { case .idle: "idle"; case .comfortable: "comfortable"; case .lasts: "lasts"; case .runsOut: "runs_out"; case .blocked: "blocked" }
+    }
+
     enum CodingKeys: String, CodingKey {
-        case used, left, level
+        case used, left, level, outlook
         case resetsAt = "resets_at"
+        case runsOutAt = "runs_out_at"
+        case leftAtReset = "left_at_reset"
     }
 }
 

@@ -39,6 +39,15 @@ public struct PacingPolicy: Codable, Sendable, Hashable {
 
     public static let standard = PacingPolicy()
 
+    /// The standard policy with the 5-hour warning moved to `warnAt` (Settings). The rose level
+    /// stays at 90% unless the warning itself starts there or later.
+    public static func sessionWarning(at warnAt: Double) -> PacingPolicy {
+        var p = PacingPolicy()
+        p.sessionAmber = min(max(warnAt, 0.3), 0.95)
+        p.sessionRose = max(0.90, min(p.sessionAmber + 0.05, 0.98))
+        return p
+    }
+
     /// Classifies by the sustainable multiple alone. `sShift` / `rShift` move the boundaries for hysteresis.
     public func classify(multiple s: Double, remaining r: Double, sShift: Double = 0, rShift: Double = 0) -> PacingState {
         let s = s + sShift

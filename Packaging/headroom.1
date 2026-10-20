@@ -34,15 +34,20 @@ prints the last snapshot and says how old it is.
 .TP
 .B headroom
 One line per provider (emoji cells, percent left, time to renewal), then indented lines
-for the verdict, a 5-hour session warning (at 75% used or more), blocks, faults and
-reset credits.
+for the verdict, the 5-hour session, blocks, faults and reset credits. The session line
+is a warning from the level set in Settings (75% used by default), an amber heads-up when
+the recent pace runs it out before its reset, and a dim line with the spare share otherwise.
 .TP
 .B \-\-json
 Every number in the snapshot, plus
 .B stale
 and
 .BR age_seconds .
-Schema version 1.
+Schema version 1. Each session carries
+.BR outlook " (idle, comfortable, lasts, runs_out, blocked),"
+.B runs_out_at
+and
+.BR left_at_reset .
 .TP
 .B \-\-refresh
 Asks the app for fresh limits (a Darwin notification,

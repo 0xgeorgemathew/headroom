@@ -23,6 +23,7 @@ struct Presenter {
     var calendar: Calendar = Display.calendar
     var locale: Locale = Display.locale
     var policy: PacingPolicy = .standard
+    var options = PresentationOptions()
 
     func paceCard(_ input: PaceInput) -> PaceCardModel {
         let p = input.provider
@@ -49,7 +50,8 @@ struct Presenter {
         var model = PaceCardModel(provider: p, plan: reading.plan?.pill, freshness: freshness, session: nil, hero: nil,
                                   meter: nil, glide: nil, verdict: nil, callout: nil, rows: [], fault: nil)
 
-        if let s = session, s.showsBanner, let resetsAt = s.resetsAt {
+        let detailed = options.sessionDetail == .detailed && reading.session != nil
+        if !detailed, let s = session, s.showsBanner, let resetsAt = s.resetsAt {
             let clock = TimeFormat.clock(resetsAt, calendar: calendar, locale: locale)
             model.session = SessionBannerModel(
                 level: s.level, used: s.used, title: s.title,
@@ -79,8 +81,14 @@ struct Presenter {
             model.callout = callout(reading, headline: headline, earlyResetAt: input.earlyResetAt)
         }
 
+        if detailed, let s = session {
+            let forecast = SessionForecast(window: reading.session, samples: input.samples[LimitWindow.sessionID()] ?? [], now: now)
+            let weekLeft = reading.headline?.remaining
+            model.sessionModule = sessionModule(s, forecast: forecast, weekLeft: weekLeft)
+        }
+
         // Detail rows.
-        if let s = session, !s.showsBanner, let w = reading.session {
+        if !detailed, let s = session, !s.showsBanner, let w = reading.session {
             model.rows.append(DetailRowModel(
                 icon: .ring(used: s.used, level: s.level), label: "5-hour session",
                 value: "\(percent(s.remaining)) left",
@@ -104,6 +112,57 @@ struct Presenter {
     }
 
     // MARK: Pieces
+
+    func sessionModule(_ s: SessionStatus, forecast f: SessionForecast, weekLeft: Double?) -> SessionModuleModel {
+        let clock: (Date) -> String = { TimeFormat.clock($0, calendar: calendar, locale: locale) }
+        var m = SessionModuleModel(level: s.level, outlook: f.outlook, tone: f.pacingState, used: f.used, elapsed: f.elapsed,
+                                   projectedUsed: nil, title: s.title, subtitle: "", countdown: "", caption: "to reset", forecast: "",
+                                   startLabel: f.startedAt.map(clock), endLabel: f.resetsAt.map(clock), onTop: s.showsBanner)
+        switch f.outlook {
+        case .idle:
+            m.level = .normal
+            m.title = "5-hour session"
+            m.subtitle = "Full · nothing used yet"
+            m.countdown = "5h"
+            m.caption = "available"
+            m.forecast = "The 5-hour clock starts with your next message."
+            m.startLabel = nil
+            m.endLabel = nil
+            m.onTop = false
+            return m
+        case .blocked:
+            m.subtitle = f.resetsAt.map { "back at \(clock($0))" } ?? "paused until the reset"
+            m.forecast = weekLeft.map { "Paused until the reset. \(percent($0)) of the week is still left after it." }
+                ?? "Paused until the reset."
+        case .comfortable:
+            if let left = f.leftAtReset {
+                m.forecast = left >= 0.995 ? "Barely touched. Nearly all of it renews unused." : "At this rate about \(percent(left)) is left when it resets."
+            } else {
+                m.forecast = "Just started. A forecast follows after ten minutes."
+            }
+        case .lasts:
+            let left = f.leftAtReset ?? 0
+            m.forecast = left >= 0.01 ? "At this rate it lasts to the reset, with \(percent(left)) to spare." : "At this rate it lasts right up to the reset."
+        case .runsOut:
+            if let out = f.runsOutAt, let reset = f.resetsAt {
+                m.forecast = "At this rate it runs out around \(TimeFormat.shortClock(out, calendar: calendar, locale: locale)), \(Self.hoursMinutes(reset.timeIntervalSince(out))) before the reset."
+            }
+        }
+        if f.outlook != .blocked {
+            m.subtitle = "\(percent(f.remaining)) left" + (f.resetsAt.map { " · resets \(clock($0))" } ?? "")
+        }
+        m.countdown = Self.hoursMinutes(f.timeLeft)
+        if let burn = f.burnPerHour, f.outlook != .blocked { m.projectedUsed = min(1, f.used + burn * f.timeLeft / 3600) }
+        return m
+    }
+
+    /// "<1m", "48m", "2h", "2h 12m".
+    static func hoursMinutes(_ seconds: TimeInterval) -> String {
+        let minutes = Int((max(0, seconds) / 60).rounded())
+        if minutes < 1 { return "<1m" }
+        if minutes < 60 { return "\(minutes)m" }
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
 
     private func glide(_ a: PacingAnalysis, samples: [UsageSample], state: PacingState) -> GlideModel {
         let hours = a.duration / 3600

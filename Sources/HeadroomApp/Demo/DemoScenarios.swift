@@ -1,4 +1,5 @@
 import AppKit
+import HeadroomCore
 import HeadroomKit
 
 /// Fixture-driven states for every surface, so the visual pass can reach each one without
@@ -55,14 +56,18 @@ enum Demo {
         // Flatten the last day so the projection lands at "80% renews unused".
         var s = samples(cum, start: start)
         for i in s.indices where s[i].time > at(now, hours: -24) { s[i].used = min(s[i].used, 0.18 - 0.001 * now.timeIntervalSince(s[i].time) / 3600) }
-        return PaceInput(provider: .claude, reading: reading, samples: ["weekly": s], weekCostMicros: 412_000_000)
+        // A heavy last half hour: the session runs out a little before its reset.
+        let sStart = at(now, hours: -4.2)
+        let sess = [0.0, 0.12, 0.30, 0.46, 0.58, 0.66, 0.70].enumerated().map { UsageSample(time: at(sStart, hours: Double($0.offset) * 0.6), used: $0.element) }
+            + [UsageSample(time: now, used: 0.84)]
+        return PaceInput(provider: .claude, reading: reading, samples: ["weekly": s, "session": sess], weekCostMicros: 412_000_000)
     }
 
     static func codexMockup(now: Date) -> PaceInput {
         let start = at(now, hours: -69)
         let cum = series(total: 0.41, nowH: 69, startHour: 13, seed: 5) { $0 > 45 ? 2.4 : 1 }
         let weekly = LimitWindow(id: "weekly", kind: .weekly, used: 0.41, resetsAt: at(start, hours: 168), duration: 168 * 3600)
-        let session = LimitWindow(id: "session", kind: .session, used: 0.12, resetsAt: at(now, hours: 5.17), duration: 5 * 3600)
+        let session = LimitWindow(id: "session", kind: .session, used: 0.10, resetsAt: at(now, hours: 4.2), duration: 5 * 3600)
         let credits = [
             ResetCredit(expiresAt: at(now, hours: 72), title: "Weekly limit reset"),
             ResetCredit(expiresAt: at(now, hours: 24 * 20), title: "Weekly limit reset"),
@@ -106,7 +111,7 @@ enum Demo {
             PaceScenario(name: "verytight", inputs: [state(.codex, used: 0.82, elapsedH: 72, now: now)], note: "Very tight"),
             PaceScenario(name: "exhausted", inputs: [state(.claude, used: 1, elapsedH: 140, now: now)], note: "Weekly limit reached"),
         ]
-        for (level, used) in [("session-row", 0.42), ("session-amber", 0.84), ("session-rose", 0.94), ("session-blocked", 1.0)] {
+        for (level, used) in [("session-row", 0.42), ("session-runsout", 0.6), ("session-amber", 0.84), ("session-rose", 0.94), ("session-blocked", 1.0)] {
             out.append(PaceScenario(name: level, inputs: [state(.claude, used: 0.46, elapsedH: 90, session: used, now: now)], note: "5-hour session \(level)"))
         }
         let faults: [(String, Fault)] = [
@@ -137,5 +142,28 @@ enum Demo {
         let teamSession = LimitWindow(id: "session", kind: .session, used: 0.5, resetsAt: at(now, hours: 2))
         out.append(PaceScenario(name: "team-scoped", inputs: [PaceInput(provider: .claude, reading: LimitReading(provider: .claude, fetchedAt: now, source: .api, plan: PlanCatalog.claude(subscriptionType: "team", rateLimitTier: "default_claude_max_5x"), windows: [teamSession, fableHead]))], note: "No weekly_all: scoped cap headline"))
         return out
+    }
+}
+
+extension Demo {
+    /// About a week of 5-hour sessions, newest last; the last one still running.
+    static func sessionHistory(_ p: Provider, now: Date) -> [SessionRecord] {
+        let claude: [(dayAgo: Int, hour: Double, peak: Double, hitAfterH: Double?)] = [
+            (6, 9, 0.62, nil), (6, 14.5, 0.88, nil), (5, 9.5, 1, 3.6), (5, 15, 0.71, nil), (4, 10, 0.45, nil), (4, 15.5, 0.93, nil),
+            (3, 9, 1, 4.1), (3, 14.5, 0.58, nil), (2, 10, 0.34, nil), (2, 16, 0.79, nil), (1, 9, 0.66, nil), (1, 14.5, 1, 3.2),
+            (1, 20, 0.28, nil), (0, 5.8, 0.84, nil),
+        ]
+        let codex: [(dayAgo: Int, hour: Double, peak: Double, hitAfterH: Double?)] = [
+            (6, 13, 0.22, nil), (5, 11, 0.41, nil), (5, 17, 0.18, nil), (4, 10, 0.36, nil), (3, 12, 0.52, nil), (3, 18, 0.30, nil),
+            (2, 9.5, 0.47, nil), (2, 15, 0.81, nil), (1, 11, 0.26, nil), (1, 17, 0.39, nil), (0, 5.8, 0.10, nil),
+        ]
+        let cal = Display.calendar
+        let today = cal.startOfDay(for: now)
+        return (p == .claude ? claude : codex).enumerated().map { i, s in
+            let start = cal.date(byAdding: .day, value: -s.dayAgo, to: today)!.addingTimeInterval(s.hour * 3600)
+            let last = i == (p == .claude ? claude : codex).count - 1
+            return SessionRecord(start: start, resetsAt: start.addingTimeInterval(5 * 3600), peakUsed: s.peak,
+                                 hitLimitAt: s.hitAfterH.map { start.addingTimeInterval($0 * 3600) }, inProgress: last)
+        }
     }
 }

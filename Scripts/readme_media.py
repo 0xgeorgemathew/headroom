@@ -60,6 +60,13 @@ def shot(src, height=None, fade=0.78, position="top"):
             f'<img src="{src}" style="object-fit:cover;object-position:{position};height:100%"></div>')
 
 
+def png_size(path):
+    """Pixel width and height from a PNG header."""
+    with open(path, "rb") as f:
+        head = f.read(24)
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
 def grid_height(rows, shot_h, gap=30):
     """Panel height for a grid of eyebrow + shot cells (padding 34 + 38, eyebrow 30)."""
     return 72 + rows * (30 + shot_h) + (rows - 1) * gap
@@ -175,16 +182,49 @@ def main():
         grid = "".join(f"<div>{eyebrow(t, c)}{shot(f'{raw}/pace-{s}-dark.png', 640, fade=0.82)}</div>" for t, s, c in cells)
         panel("pace", f'<div class="grid" style="grid-template-columns:1fr 1fr">{grid}</div>', 960, grid_height(2, 640), raw, work)
 
-        # 5-hour session levels, 2 x 2, cropped to the banner.
-        levels = [("Under 75% · a quiet row", "session-row", None), ("75% · amber warning", "session-amber", STATE["tight"]),
-                  ("90% · rose warning", "session-rose", STATE["verytight"]), ("100% · paused until reset", "session-blocked", STATE["verytight"])]
-        def level_shot(s):
-            # The quiet row lives near the bottom of the card; the banners sit right under the header.
-            if s == "session-row":
-                return shot(f'{raw}/pace-{s}-dark.png', 200, fade=0.62, position="bottom")
-            return shot(f'{raw}/pace-{s}-dark.png', 200, fade=0.86)
-        grid = "".join(f"<div>{eyebrow(t, c)}{level_shot(s)}</div>" for t, s, c in levels)
-        panel("session", f'<div class="grid" style="grid-template-columns:1fr 1fr">{grid}</div>', 960, grid_height(2, 200), raw, work)
+        # Welcome window: four of its five steps, 2 x 2.
+        steps = [("1 · Welcome", "onboarding-1-dark"), ("2 · Pick your tools", "onboarding-2-light"),
+                 ("3 · Shape the menu bar", "onboarding-3-light"), ("4 · Tune the 5-hour warning", "onboarding-4-dark")]
+        cell_w = (960 - 68 - 26) / 2
+        sw, sh = png_size(raw / "onboarding-1-dark.png")
+        step_h = round(cell_w * sh / sw)
+        grid = "".join(f"<div>{eyebrow(t)}<div class='shot win'><img src='{raw}/{s}.png'></div></div>" for t, s in steps)
+        panel("welcome", f'<div class="grid" style="grid-template-columns:1fr 1fr">{grid}</div>', 960, grid_height(2, step_h), raw, work,
+              ".win { border-radius: 12px; box-shadow: 0 14px 34px rgba(0,0,0,.45); }")
+
+        # 5-hour session: the detailed panel through its states, 2 x 3.
+        levels = [("Not started", "idle", None), ("On track · forecast", "comfortable", STATE["onpace"]),
+                  ("Heads-up · runs out before the reset", "runsout", STATE["tight"]), ("75% · amber warning", "amber", STATE["tight"]),
+                  ("90% · rose warning", "rose", STATE["verytight"]), ("100% · paused until reset", "blocked", STATE["verytight"])]
+        heights = []
+        for _, s_, _ in levels:
+            w_, h_ = png_size(raw / f"session-{s_}-dark.png")
+            heights.append(cell_w * h_ / w_)
+        row_h = [max(heights[i], heights[i + 1]) for i in (0, 2, 4)]
+        grid = "".join(f"<div>{eyebrow(t, c)}<div class='shot'><img src='{raw}/session-{s_}-dark.png'></div></div>" for t, s_, c in levels)
+        panel("session", f'<div class="grid" style="grid-template-columns:1fr 1fr;align-items:start">{grid}</div>', 960,
+              round(72 + sum(30 + h for h in row_h) + 2 * 30), raw, work)
+
+        # Recent 5-hour sessions (Activity tab), dark and light.
+        sw, sh = png_size(raw / "sessions-dark.png")
+        hist_h = round(cell_w * sh / sw)
+        body = "".join(f"<div>{eyebrow(t)}<div class='shot'><img src='{raw}/sessions-{th}.png'></div></div>"
+                       for t, th in (("Activity · 5-hour sessions", "dark"), ("Light appearance", "light")))
+        panel("sessions", f'<div class="grid" style="grid-template-columns:1fr 1fr">{body}</div>', 960, grid_height(1, hist_h), raw, work)
+
+        # Menu bar options.
+        options = [("Default", "default"), ("Show the percentage", "percent"), ("Meter tracks the 5-hour session", "session"),
+                   ("Whichever is tighter, with percentage", "tighter"), ("Most urgent only, timer always on", "urgent")]
+        rows = "".join(f"""<div class="opt"><span>{html.escape(t)}</span><div class="wall"><div class="mb">
+            <img src="{raw}/statusitem-{o}-dark.png"><em>Tue 10:02</em></div></div></div>""" for t, o in options)
+        panel("customize", rows, 960, 72 + len(options) * 64 - 14, raw, work, """
+.opt { display: grid; grid-template-columns: 300px 1fr; align-items: center; gap: 20px; margin-bottom: 14px; }
+.opt span { font: 600 15px -apple-system, system-ui; color: #F4F4F6; padding-left: 4px; }
+.wall { height: 50px; border-radius: 12px; overflow: hidden; background: linear-gradient(115deg,#1A2150,#3B2A5C 55%,#0F2F45);
+  display: flex; align-items: center; }
+.mb { height: 30px; width: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 18px; padding: 0 16px; background: rgba(8,8,16,.32); }
+.mb img { height: 22px; }
+.mb em { font: normal 500 13px -apple-system, system-ui; color: #F4F4F6; font-variant-numeric: tabular-nums; }""")
 
         # Callouts: model caps, early reset, reset credits.
         calls = [("Model cap reached", "cap-empty-dark"), ("Model cap tighter than the week", "cap-tight-light"),
@@ -224,17 +264,18 @@ pre {{ height: {snap_h}px; overflow: hidden; border-radius: 18px; padding: 22px 
         term = (f"{c('$', '#6E7487')} <b>headroom</b>\n"
                 f"<b>Claude</b>  🟦🟦🟦🟦⬛   82% · renews in 20h ⏳\n"
                 f"  ↳ {c('plenty', '#6AA8FF')} · 80% renews unused at this pace\n"
-                f"  ↳ {c('⚠ 5-hour session 16% left · resets 12:30', '#FFC248')}\n"
+                f"  ↳ {c('⚠ 5-hour session 16% left · resets 10:48 AM · runs out ~10:41 AM, 7m early', '#FFC248')}\n"
                 f"<b>Codex</b>   🟨🟨🟨⬛⬛   59% · renews in 4d\n"
                 f"  ↳ {c('tight', '#FFC248')} · runs out Fri 4 PM, 21h early\n"
+                f"  ↳ {c('5-hour session 90% left · resets 2:12 PM · ~38% spare at this pace', '#6E7487')}\n"
                 f"  ↳ {c('⏳ 1 reset credit lapses in 3d', '#8CC2FF')}\n\n"
                 f"{c('$', '#6E7487')} <b>headroom statusline</b>\n"
                 f"Claude 🟦🟦🟦🟦⬛ 82% {c('⏱48m', '#FFC248')}  Codex 🟨🟨🟨⬛⬛ 59%\n\n"
                 f"{c('$', '#6E7487')} <b>headroom wait</b> && claude -p \"continue the refactor\"\n"
-                f"{c('⏸ waiting on the 5-hour session · 12:30 (48m)', '#6E7487')}")
+                f"{c('⏸ waiting on the 5-hour session · 10:48 AM (48m)', '#6E7487')}")
         body = f"""<div class="term"><div class="tt"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i>
           <i style="background:#28C840"></i><span>Terminal</span></div><pre>{term}</pre></div>"""
-        panel("terminal", body, 960, 470, raw, work, """
+        panel("terminal", body, 960, 496, raw, work, """
 .term { border-radius: 16px; overflow: hidden; background: #0B0C0F; box-shadow: inset 0 0 0 1px rgba(255,255,255,.09), 0 18px 40px rgba(0,0,0,.35); }
 .tt { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: linear-gradient(180deg,#1E1F25,#18191E);
   box-shadow: inset 0 -1px 0 rgba(255,255,255,.05); }

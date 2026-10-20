@@ -7,6 +7,8 @@ public struct HistoryStore: Codable, Sendable, Hashable {
     public static let maxSamples = 700
     public static let maxWeeks = 26
     public static let weekSampleLimit = 168
+    /// Finished 5-hour sessions kept per account (a few weeks of heavy use).
+    public static let maxSessions = 120
 
     public var accounts: [String: AccountHistory] = [:]
 
@@ -61,6 +63,8 @@ public struct HistoryStore: Codable, Sendable, Hashable {
         let live = Set(reading.windows.map(\.id))
         acct.windows = acct.windows.filter { live.contains($0.key) }
 
+        if let session = reading.session { Self.recordSession(session, into: &acct, now: now) }
+
         // 5-hour limit hits: count each blocked session once.
         if let s = reading.session, s.used >= 1, let r = s.resetsAt, acct.lastBlockedSessionReset.map({ abs($0.timeIntervalSince(r)) > 60 }) ?? true {
             acct.sessionHitsThisWindow += 1
@@ -68,6 +72,25 @@ public struct HistoryStore: Codable, Sendable, Hashable {
         }
         acct.headlineID = reading.headline?.id
         accounts[key] = acct
+    }
+
+    /// Follows the 5-hour session: samples while one runs, and a record once it resets.
+    static func recordSession(_ w: LimitWindow, into acct: inout AccountHistory, now: Date) {
+        if let current = acct.session {
+            let moved = w.resetsAt.map { abs($0.timeIntervalSince(current.resetsAt)) > 600 } ?? false
+            if moved || current.resetsAt <= now {
+                if let record = current.closeSession() {
+                    acct.sessions.append(record)
+                    if acct.sessions.count > maxSessions { acct.sessions.removeFirst(acct.sessions.count - maxSessions) }
+                }
+                acct.session = nil
+            }
+        }
+        guard let resetsAt = w.resetsAt, resetsAt > now, w.used > 0 else { return }
+        var current = acct.session ?? WindowHistory(id: LimitWindow.sessionID(), resetsAt: resetsAt, duration: w.effectiveDuration)
+        if abs(resetsAt.timeIntervalSince(current.resetsAt)) > 1 { current.resetsAt = resetsAt }
+        current.append(UsageSample(time: now, used: w.used))
+        acct.session = current
     }
 
     /// Samples for one window of one account.
@@ -85,10 +108,55 @@ public struct AccountHistory: Codable, Sendable, Hashable {
     public var earlyResetAt: Date?
     public var planThisWindow: String?
     public var tracker: PacingTracker?
+    /// The 5-hour session in progress, while one runs.
+    public var session: WindowHistory?
+    /// Finished 5-hour sessions, oldest first.
+    public var sessions: [SessionRecord] = []
 
     public init() {}
 
     public var headline: WindowHistory? { headlineID.flatMap { windows[$0] } }
+
+    // State saved before sessions were tracked has neither key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        windows = try c.decode([String: WindowHistory].self, forKey: .windows)
+        weeks = try c.decode([WeekRecord].self, forKey: .weeks)
+        headlineID = try c.decodeIfPresent(String.self, forKey: .headlineID)
+        sessionHitsThisWindow = try c.decodeIfPresent(Int.self, forKey: .sessionHitsThisWindow) ?? 0
+        lastBlockedSessionReset = try c.decodeIfPresent(Date.self, forKey: .lastBlockedSessionReset)
+        earlyResetAt = try c.decodeIfPresent(Date.self, forKey: .earlyResetAt)
+        planThisWindow = try c.decodeIfPresent(String.self, forKey: .planThisWindow)
+        tracker = try c.decodeIfPresent(PacingTracker.self, forKey: .tracker)
+        session = try c.decodeIfPresent(WindowHistory.self, forKey: .session)
+        sessions = try c.decodeIfPresent([SessionRecord].self, forKey: .sessions) ?? []
+    }
+
+    /// Finished sessions plus the one in progress (as a record so far), newest last.
+    public func recentSessions(now: Date) -> [SessionRecord] {
+        var all = sessions
+        if let current = session, current.resetsAt > now, let live = current.closeSession(live: true) { all.append(live) }
+        return all
+    }
+}
+
+/// One 5-hour session: when it ran, how much of it was used, and whether it hit the limit.
+public struct SessionRecord: Codable, Sendable, Hashable {
+    public var start: Date
+    public var resetsAt: Date
+    public var peakUsed: Double
+    public var hitLimitAt: Date?
+    /// True for the session still running (never stored).
+    public var inProgress: Bool
+
+    public init(start: Date, resetsAt: Date, peakUsed: Double, hitLimitAt: Date?, inProgress: Bool = false) {
+        self.start = start; self.resetsAt = resetsAt; self.peakUsed = peakUsed; self.hitLimitAt = hitLimitAt; self.inProgress = inProgress
+    }
+
+    public var hitLimit: Bool { hitLimitAt != nil || peakUsed >= 1 }
+
+    /// How long before its reset the session ran out.
+    public var cutShort: TimeInterval? { hitLimitAt.map { max(0, resetsAt.timeIntervalSince($0)) } }
 }
 
 public struct WindowHistory: Codable, Sendable, Hashable {
@@ -118,6 +186,13 @@ public struct WindowHistory: Codable, Sendable, Hashable {
             let thinned = samples[..<half].enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
             samples = thinned + samples[half...]
         }
+    }
+
+    /// The session this window followed, or nil when nothing was used.
+    func closeSession(live: Bool = false) -> SessionRecord? {
+        let peak = samples.map(\.used).max() ?? 0
+        guard peak > 0 else { return nil }
+        return SessionRecord(start: start, resetsAt: resetsAt, peakUsed: peak, hitLimitAt: samples.first { $0.used >= 1 }?.time, inProgress: live)
     }
 
     func close(endedAt: Date, early: Bool, sessionHits: Int, plan: String?) -> WeekRecord {

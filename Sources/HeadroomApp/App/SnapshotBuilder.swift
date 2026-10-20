@@ -10,7 +10,9 @@ struct SnapshotBuilder {
     var locale: Locale = Display.locale
 
     func build(model: AppModel) -> Snapshot {
-        let presenter = Presenter(now: now, calendar: calendar, locale: locale)
+        var presenter = model.presenter(now: now)
+        presenter.calendar = calendar
+        presenter.locale = locale
         let providers = model.paceInputs().map { input -> ProviderSnapshot in
             var p = provider(input, presenter: presenter, outage: model.majorOutages[input.provider])
             let day = model.buckets.totals(input.provider, from: now.addingTimeInterval(-86400), to: now)
@@ -28,8 +30,11 @@ struct SnapshotBuilder {
         out.plan = r.plan?.pill
         out.readingAt = r.fetchedAt
         out.source = r.source.rawValue
-        if let s = SessionStatus(window: r.session, now: now) {
-            out.session = SessionSnapshot(used: s.used, left: s.remaining, resetsAt: s.resetsAt, level: SessionSnapshot.levelCode(s.level))
+        if let s = SessionStatus(window: r.session, now: now, policy: presenter.policy) {
+            let f = SessionForecast(window: r.session, samples: input.samples[LimitWindow.sessionID()] ?? [], now: now)
+            out.session = SessionSnapshot(used: s.used, left: s.remaining, resetsAt: s.resetsAt, level: SessionSnapshot.levelCode(s.level),
+                                          outlook: SessionSnapshot.outlookCode(f.outlook), runsOutAt: f.runsOutAt,
+                                          leftAtReset: f.leftAtReset.map { ($0 * 1000).rounded() / 1000 })
         }
         out.caps = r.modelCaps.filter { $0.id != r.headline?.id }
             .map { CapSnapshot(label: $0.label ?? "Model", used: $0.used, resetsAt: $0.resetsAt, active: $0.isActive) }

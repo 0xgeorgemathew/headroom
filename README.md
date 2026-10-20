@@ -27,11 +27,17 @@ Paste this into Terminal:
 curl -fsSL https://raw.githubusercontent.com/0xgeorgemathew/headroom/main/install.sh | bash
 ```
 
-Headroom appears in your menu bar a few seconds later. Open its Settings to turn on **Launch at login**.
+Headroom appears in your menu bar a few seconds later and opens a short welcome to set it up.
 
 You'll need a Mac with Apple silicon on macOS 15 or later, and Claude Code or Codex signed in to your subscription.
 
 <br>
+
+## Set up your way
+
+<img src="media/welcome.png" alt="The welcome window: what the colors mean, picking Claude Code and Codex, shaping the menu bar with a live preview, and tuning the 5-hour warning">
+
+A five-step welcome lets you choose which tools to watch, what the menu bar shows, when the 5-hour session should warn you, and which notifications you want. Every choice previews live and applies at once, and it's all in Settings later.
 
 ## Your week, at a glance
 
@@ -39,17 +45,27 @@ You'll need a Mac with Apple silicon on macOS 15 or later, and Claude Code or Co
 
 Each provider gets five cells in your menu bar. **Blue** means you have room to spare, **white** means you're on pace, **amber** and **rose** mean slow down. An hourglass shows when unused allowance is about to renew, and a countdown appears when your 5-hour session is nearly used up.
 
+## Make it yours
+
+<img src="media/customize.png" alt="Menu bar variations: default, with percentages, the meter tracking the 5-hour session, whichever is tighter, and most urgent only">
+
+Add the percentage beside each meter, keep the 5-hour timer always visible, show only the most urgent provider, or let the cells track the 5-hour session instead of the week (marked with a small **5H**). **Whichever is tighter** switches over only while the session is the closer limit. Light, dark or system appearance, your call.
+
 ## Pace, not just a percentage
 
 <img src="media/pace.png" alt="The four pacing states: Plenty available, On pace, Getting tight, Very tight">
 
 82% left sounds great until you notice it renews tomorrow. Headroom compares what's left with the time left, draws your week so far, and tells you in one sentence whether to use more, keep going, or ease off, and roughly when you'd run out.
 
-## A warning before the 5-hour limit
+## First-class 5-hour limits
 
-<img src="media/session.png" alt="The 5-hour session as a quiet row, an amber warning, a rose warning, and paused until reset">
+<img src="media/session.png" alt="The 5-hour panel: not started, on track with a forecast, a heads-up that it runs out before the reset, amber and rose warnings, and paused until reset">
 
-Your 5-hour session stays a quiet line until it matters. At 75% it turns into an amber warning with a countdown, at 90% it turns rose, and when you hit the limit it tells you exactly when you're back.
+The 5-hour session is usually the limit you hit first, so it gets its own panel on every card: how much is left, a timeline of the five hours with where you are now, and a forecast from your recent pace: *about 25% left when it resets*, or *runs out around 11:52 AM, 20m before the reset*. Once it crosses your warning level (75% by default, or 50, 60 or 90%) it moves to the top of the card and turns amber, then rose. At the limit it tells you exactly when you're back, and how much of the week is still waiting.
+
+<img src="media/sessions.png" alt="Recent 5-hour sessions in the Activity tab, showing each session's peak and which ones hit the limit">
+
+The Activity tab keeps your recent sessions, so a run of near-misses stands out. Optional notifications tell you when a session is nearly used, when you hit the limit, and the moment it's back. Prefer the old single row? Choose **Compact** in Settings.
 
 ## Caps, early resets and expiring credits
 
@@ -79,7 +95,7 @@ Right-click any card to copy a share image or a text version. Shares never inclu
 
 <img src="media/terminal.png" alt="The headroom command showing the weekly summary, a one-line status, and waiting for the session to reset">
 
-Type `headroom` for the same summary, add a one-line status to your prompt or editor, or have a long job wait until your session frees up. `man headroom` has the details.
+Type `headroom` for the same summary, including where your 5-hour session is heading, add a one-line status to your prompt or editor, or have a long job wait until your session frees up. `man headroom` has the details.
 
 <br>
 
@@ -87,7 +103,7 @@ Type `headroom` for the same summary, add a one-line status to your prompt or ed
 
 - Headroom only **reads**. It never sends a prompt, never uses one of your reset credits, and never changes your sign-in.
 - Your token counts come from files already on your Mac. Nothing you type is stored, and nothing is uploaded.
-- The only places it connects to are Anthropic's usage page and, if you leave it on, the Claude and OpenAI status pages. No analytics, ever.
+- The only places it connects to are Anthropic's usage page and, if you leave it on, the Claude and OpenAI status pages. No analytics, ever. Notifications are local.
 - It's light: about 17 MB of memory and no CPU while it waits.
 
 ## Update or remove

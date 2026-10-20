@@ -13,6 +13,10 @@ struct MenuBarProviderModel: Hashable {
     var blockedCountdown: String?
     var fault: Bool
     var spoken: String
+    /// "82%" after the meter (Settings).
+    var percent: String? = nil
+    /// The cells show the 5-hour session rather than the week.
+    var tracksSession = false
 
     struct SessionWarning: Hashable {
         var level: SessionLevel
@@ -66,6 +70,7 @@ enum StatusItemRenderer {
 
     static func groupWidth(_ m: MenuBarProviderModel) -> CGFloat {
         var w: CGFloat = 14 + 5 + meterWidth
+        if m.percent != nil { w += 4 + percentWidth }
         if m.hourglass && m.blockedCountdown == nil { w += 5 + 7 }
         if let b = m.blockedCountdown { w += 5 + 7 + 3 + slotWidth(b) }
         else if let s = m.session { w += 5 + 3 + 11 + 3 + slotWidth(s.countdown) }
@@ -74,6 +79,9 @@ enum StatusItemRenderer {
     }
 
     static func countdownText(_ s: String, color: NSColor) -> Text { Text(s, F.sf(11.5, 650, tabular: true), color) }
+
+    /// Fixed slot for "100%", so the item keeps its width as the number changes.
+    static var percentWidth: CGFloat { countdownText("100%", color: .black).width }
 
     /// Countdown slots are sized for their widest form ("88m", "8:88", "88h") so the item's
     /// width doesn't change every minute (a width change relayouts the menu bar).
@@ -172,7 +180,23 @@ enum StatusItemRenderer {
                 }
                 ctx.endTransparencyLayer()
             }
+            // The session meter wears a small "5h" notch so it's never mistaken for the week.
+            if m.tracksSession {
+                let notch = Text("5H", F.sf(6.5, 800), dark ? rgb(0x15161A) : white(1), kern: 0.2)
+                let r = CGRect(x: x + meterWidth - notch.width - 3.5, y: mid - 9.5, width: notch.width + 3, height: 7.5)
+                ctx.withState {
+                    ctx.setShadow(offset: .zero, blur: 1.5, color: (dark ? black(0.6) : white(0.9)).cgColor)
+                    ctx.fill(rounded(r, 2.5), dark ? white(0.92) : rgb(0x2A2C31))
+                }
+                notch.draw(x: r.midX + 0.1, capCenter: r.midY, align: .center, in: ctx)
+            }
             x += meterWidth
+            if let pct = m.percent {
+                x += 4
+                let t = countdownText(pct, color: ink.fade(m.fault ? 0.6 : 0.92))
+                t.draw(x: x, capCenter: mid, in: ctx)
+                x += percentWidth
+            }
             if let blocked = m.blockedCountdown {
                 x += 5
                 let c = dark ? rgb(0xFF8FA2) : rgb(0xD21F45)
@@ -189,7 +213,11 @@ enum StatusItemRenderer {
                 }
                 if let s = m.session {
                     x += 5 + 3
-                    let c: NSColor = s.level == .amber ? (dark ? rgb(0xFFC248) : rgb(0xB87200)) : (dark ? rgb(0xFF8FA2) : rgb(0xD21F45))
+                    let c: NSColor = switch s.level {
+                    case .normal: ink.fade(0.82)
+                    case .amber: dark ? rgb(0xFFC248) : rgb(0xB87200)
+                    case .rose, .blocked: dark ? rgb(0xFF8FA2) : rgb(0xD21F45)
+                    }
                     Glyph.ring(in: CGRect(x: x, y: mid - 5.5, width: 11, height: 11), fraction: CGFloat(s.used), color: c,
                                track: c.fade(0.22), lineWidth: 2, ctx: ctx)
                     x += 11 + 3

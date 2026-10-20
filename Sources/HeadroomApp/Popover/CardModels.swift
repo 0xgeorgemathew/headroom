@@ -22,6 +22,28 @@ struct SessionBannerModel: Equatable {
     var caption: String
 }
 
+/// The detailed 5-hour panel: where the session stands, a timeline and where it's heading.
+struct SessionModuleModel: Equatable {
+    var level: SessionLevel
+    var outlook: SessionForecast.Outlook
+    /// Color of the forecast dot and the timeline fill below the warning level.
+    var tone: PacingState
+    var used: Double
+    /// Elapsed share of the 5 hours (the "now" tick).
+    var elapsed: Double
+    /// Used share at the reset at the recent burn, when known.
+    var projectedUsed: Double?
+    var title: String
+    var subtitle: String
+    var countdown: String
+    var caption: String
+    var forecast: String
+    var startLabel: String?
+    var endLabel: String?
+    /// Shown right under the header once it warns; below the week otherwise.
+    var onTop: Bool
+}
+
 struct HeroModel: Equatable {
     var percentLeft: Int
     var label: String
@@ -102,6 +124,7 @@ struct PaceCardModel: Equatable {
     var plan: String?
     var freshness: Freshness
     var session: SessionBannerModel?
+    var sessionModule: SessionModuleModel? = nil
     var hero: HeroModel?
     var meter: MeterModel?
     var glide: GlideModel?
@@ -187,4 +210,27 @@ struct PastWeeksModel: Equatable {
 struct FooterModel: Equatable {
     var text: String
     var status: Freshness.Status
+}
+
+// MARK: - 5-hour sessions
+
+struct SessionBar: Equatable {
+    var peak: Double
+    var hitLimit: Bool
+    var inProgress: Bool
+    /// Weekday under the first session of each day.
+    var dayLabel: String?
+    var tooltip: String
+}
+
+struct SessionHistoryModel: Equatable {
+    var provider: Provider
+    /// Oldest first; the session in progress last.
+    var bars: [SessionBar]
+    var warnAt: Double
+    var chips: [(color: PastWeeksModel.ChipDot, text: String)]
+
+    static func == (a: SessionHistoryModel, b: SessionHistoryModel) -> Bool {
+        a.provider == b.provider && a.bars == b.bars && a.warnAt == b.warnAt && a.chips.map(\.text) == b.chips.map(\.text)
+    }
 }
