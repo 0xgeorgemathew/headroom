@@ -81,10 +81,14 @@ struct Presenter {
             model.callout = callout(reading, headline: headline, earlyResetAt: input.earlyResetAt)
         }
 
+        model.showsMeter = options.parts.contains(.weekMeter)
+        model.showsGlide = options.parts.contains(.weekGraph)
+
         if detailed, let s = session {
-            let forecast = SessionForecast(window: reading.session, samples: input.samples[LimitWindow.sessionID()] ?? [], now: now)
+            let samples = input.samples[LimitWindow.sessionID()] ?? []
+            let forecast = SessionForecast(window: reading.session, samples: samples, now: now)
             let weekLeft = reading.headline?.remaining
-            model.sessionModule = sessionModule(s, forecast: forecast, weekLeft: weekLeft)
+            model.sessionModule = sessionModule(s, forecast: forecast, weekLeft: weekLeft, samples: samples)
         }
 
         // Detail rows.
@@ -113,7 +117,7 @@ struct Presenter {
 
     // MARK: Pieces
 
-    func sessionModule(_ s: SessionStatus, forecast f: SessionForecast, weekLeft: Double?) -> SessionModuleModel {
+    func sessionModule(_ s: SessionStatus, forecast f: SessionForecast, weekLeft: Double?, samples: [UsageSample] = []) -> SessionModuleModel {
         let clock: (Date) -> String = { TimeFormat.clock($0, calendar: calendar, locale: locale) }
         var m = SessionModuleModel(level: s.level, outlook: f.outlook, tone: f.pacingState, used: f.used, elapsed: f.elapsed,
                                    projectedUsed: nil, title: s.title, subtitle: "", countdown: "", caption: "to reset", forecast: "",
@@ -129,6 +133,8 @@ struct Presenter {
             m.startLabel = nil
             m.endLabel = nil
             m.onTop = false
+            // A fresh session reads as a full meter; there's nothing to graph yet.
+            if options.parts.contains(.sessionMeter) { m.meter = MeterModel(state: .plenty, cells: 5, caret: nil, opacity: 1) }
             return m
         case .blocked:
             m.subtitle = f.resetsAt.map { "back at \(clock($0))" } ?? "paused until the reset"
@@ -153,7 +159,45 @@ struct Presenter {
         }
         m.countdown = Self.hoursMinutes(f.timeLeft)
         if let burn = f.burnPerHour, f.outlook != .blocked { m.projectedUsed = min(1, f.used + burn * f.timeLeft / 3600) }
+        // Past the warning the session wears the warning's color; before it, its own pace.
+        let state: PacingState = switch s.level {
+        case .normal: f.pacingState
+        case .amber: .tight
+        case .rose, .blocked: .veryTight
+        }
+        if options.parts.contains(.sessionMeter) {
+            m.meter = MeterModel(state: state, cells: PacingEngine.cells(remaining: f.remaining),
+                                 caret: f.outlook == .blocked ? nil : 1 - f.elapsed, opacity: 1)
+        }
+        if options.parts.contains(.sessionGraph) { m.glide = sessionGlide(f, samples: samples, state: state) }
         return m
+    }
+
+    /// The 5 hours as a glide path: used so far from the samples, then where the recent burn takes it.
+    private func sessionGlide(_ f: SessionForecast, samples: [UsageSample], state: PacingState) -> GlideModel? {
+        guard let start = f.startedAt, let resetsAt = f.resetsAt else { return nil }
+        let hours = resetsAt.timeIntervalSince(start) / 3600
+        let nowT = f.elapsed * hours
+        var points = samples
+            .filter { $0.time >= start && $0.time <= now }
+            .map { GlideModel.Point(t: $0.time.timeIntervalSince(start) / 3600, used: $0.used) }
+        // A session starts empty with its first message.
+        if points.first.map({ $0.t > 0.1 }) ?? true { points.insert(GlideModel.Point(t: 0, used: 0), at: 0) }
+        points.append(GlideModel.Point(t: nowT, used: f.used))
+        var end = (t: nowT, remaining: f.remaining)
+        var runsOut = false
+        var label: String? = nil
+        if f.outlook == .blocked {
+            end = (nowT, 0)
+        } else if let out = f.runsOutAt {
+            end = (out.timeIntervalSince(start) / 3600, 0)
+            runsOut = true
+        } else if let left = f.leftAtReset {
+            end = (hours, left)
+            if left >= 0.005 { label = "\(percent(left)) left at reset" }
+        }
+        return GlideModel(hours: hours, windowStart: start, nowT: nowT, points: points, projectionEnd: end,
+                          runsOut: runsOut, endLabel: label, state: state)
     }
 
     /// "<1m", "48m", "2h", "2h 12m".

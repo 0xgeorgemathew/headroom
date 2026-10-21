@@ -56,7 +56,7 @@ enum PaceCardRenderer {
         }
 
         // 4. Meter + caret.
-        if let meter = m.meter {
+        if let meter = m.meter, m.showsMeter {
             y += 15
             let track = CGRect(x: x0, y: y, width: w, height: MeterRenderer.height)
             if let ctx { MeterRenderer.draw(meter, rect: track, theme: theme, ctx: ctx) }
@@ -69,8 +69,8 @@ enum PaceCardRenderer {
         }
 
         // 5. Glide path.
-        if let g = m.glide {
-            y += 10
+        if let g = m.glide, m.showsGlide {
+            y += m.showsMeter ? 10 : 18
             let h = GlideChartRenderer.height(width: w)
             if let ctx { GlideChartRenderer.draw(g, rect: CGRect(x: x0, y: y, width: w, height: h), theme: theme, ctx: ctx) }
             y += h
@@ -180,10 +180,18 @@ enum PaceCardRenderer {
         TextBlock(s.forecast, F.sf(12, 450), color, width: width - 24 - 13, lineHeight: 16)
     }
 
+    /// Heights of the pieces between the module's header and its forecast.
+    private static func sessionBody(_ s: SessionModuleModel, width: CGFloat) -> (meter: CGFloat, timeline: CGFloat, glide: CGFloat) {
+        let meter: CGFloat = s.meter.map { 2 + MeterRenderer.height + ($0.caret == nil ? 0 : 4 + 15) } ?? 0
+        let timeline: CGFloat = s.meter == nil && s.glide == nil && s.outlook != .idle ? 6 + 6 + 5 + 10 : 0
+        let glide: CGFloat = s.glide == nil ? 0 : (s.meter == nil ? 4 : 8) + GlideChartRenderer.height(width: width - 24)
+        return (meter, timeline, glide)
+    }
+
     static func sessionModuleHeight(_ s: SessionModuleModel, width: CGFloat) -> CGFloat {
         let forecast = sessionForecastBlock(s, width: width, color: .black).height
-        let timeline: CGFloat = s.outlook == .idle ? 0 : 6 + 6 + 5 + 10
-        return 48 + timeline + 9 + forecast + 12
+        let body = sessionBody(s, width: width)
+        return 48 + body.meter + body.timeline + body.glide + 9 + forecast + 12
     }
 
     static func drawSessionModule(_ s: SessionModuleModel, rect: CGRect, theme: Theme, ctx: CGContext) {
@@ -230,10 +238,26 @@ enum PaceCardRenderer {
             .draw(x: tx, baseline: baseline(top: rect.minY + 9 + 15 + 1, font: F.sf(12), lineHeight: 14.4), in: ctx)
 
         var y = rect.minY + 48
-        if s.outlook != .idle {
+        let body = sessionBody(s, width: rect.width)
+        let inner = CGRect(x: rect.minX + 12, y: y, width: rect.width - 24, height: 0)
+        if let meter = s.meter {
+            // The week's five cells, for the session.
+            y += 2
+            let track = CGRect(x: inner.minX, y: y, width: inner.width, height: MeterRenderer.height)
+            MeterRenderer.draw(meter, rect: track, theme: theme, ctx: ctx)
+            if let caret = meter.caret { MeterRenderer.drawCaret(at: caret, trackRect: track, top: track.maxY + 4, theme: theme, ctx: ctx) }
+            y += body.meter - 2
+        }
+        if body.timeline > 0 {
             y += 6
-            drawSessionTimeline(s, rect: CGRect(x: rect.minX + 12, y: y, width: rect.width - 24, height: 6), warn: warn, theme: theme, ctx: ctx)
+            drawSessionTimeline(s, rect: CGRect(x: inner.minX, y: y, width: inner.width, height: 6), warn: warn, theme: theme, ctx: ctx)
             y += 6 + 5 + 10
+        }
+        if let g = s.glide {
+            y += body.glide - GlideChartRenderer.height(width: inner.width)
+            GlideChartRenderer.draw(g, rect: CGRect(x: inner.minX, y: y, width: inner.width, height: GlideChartRenderer.height(width: inner.width)),
+                                    theme: theme, ctx: ctx)
+            y += GlideChartRenderer.height(width: inner.width)
         }
 
         // Forecast: a toned dot and one plain sentence.

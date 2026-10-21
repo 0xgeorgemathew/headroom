@@ -97,6 +97,15 @@ enum RenderCommand {
                 }
             }
         }
+        if name == "all" || name == "settings" {
+            for theme in themes {
+                for section in SettingsView.Section.allCases {
+                    if let rep = PopoverPage.renderSettings(section: section, theme: theme) {
+                        write(rep, to: outDir.appendingPathComponent("settings-\(section.rawValue + 1)-\(theme.isDark ? "dark" : "light").png")); written += 1
+                    }
+                }
+            }
+        }
         print("rendered \(written) image(s) to \(outDir.path)")
         return 0
     }
@@ -240,6 +249,31 @@ enum PopoverPage {
             let shape = rounded(CGRect(origin: .zero, size: size), 12)
             ctx.addPath(shape); ctx.clip()
             view.render(step: step, ctx: ctx)
+            for (i, hex) in [0xFF5F57, 0xFEBC2E, 0x28C840].enumerated() {
+                let dot = CGMutablePath(); dot.addEllipse(in: CGRect(x: 20 + CGFloat(i) * 20, y: 18, width: 12, height: 12))
+                ctx.fill(dot, rgb(UInt32(hex)))
+                ctx.stroke(dot, black(0.12), width: 0.5)
+            }
+            ctx.innerStroke(shape, theme.isDark ? white(0.12) : black(0.1), width: 1)
+        }
+    }
+
+    /// One Settings section at window size, from scratch settings.
+    static func renderSettings(section: SettingsView.Section, theme: Theme, configure: ((AppSettings) -> Void)? = nil) -> NSBitmapImageRep? {
+        let suite = "com.headroom.render.settings"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.alwaysShowSessionTimer = true
+        configure?(settings)
+        let view = SettingsView(settings: settings, model: nil)
+        view.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+        let size = SettingsView.size
+        return renderImage(size: size, appearance: view.appearance) { ctx in
+            let shape = rounded(CGRect(origin: .zero, size: size), 12)
+            ctx.addPath(shape); ctx.clip()
+            view.render(section: section, ctx: ctx)
             for (i, hex) in [0xFF5F57, 0xFEBC2E, 0x28C840].enumerated() {
                 let dot = CGMutablePath(); dot.addEllipse(in: CGRect(x: 20 + CGFloat(i) * 20, y: 18, width: 12, height: 12))
                 ctx.fill(dot, rgb(UInt32(hex)))

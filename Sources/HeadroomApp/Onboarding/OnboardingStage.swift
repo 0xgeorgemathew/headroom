@@ -47,7 +47,7 @@ enum OnboardingStage {
         menuBarStrip(Demo.menuBarItems(options: PresentationOptions()), rect: CGRect(x: rect.minX + 18, y: rect.maxY - 64, width: rect.width - 36, height: 30), theme: t, ctx: ctx)
     }
 
-    private static func providers(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
+    static func providers(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
         let side: CGFloat = 84, gap: CGFloat = 34
         let y = rect.midY - side / 2 - 16
         for (i, p) in Provider.allCases.enumerated() {
@@ -72,7 +72,7 @@ enum OnboardingStage {
         Text(caption.uppercased(), F.sf(9.5, 700), t.muted, kern: 1).draw(x: rect.midX, capCenter: rect.maxY - 46, align: .center, in: ctx)
     }
 
-    private static func menuBar(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
+    static func menuBar(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
         let items = Demo.menuBarItems(options: settings.presentation, mode: settings.menuBarMode, enabled: settings.enabledProviders, policy: settings.policy)
         menuBarStrip(items, rect: CGRect(x: rect.minX + 14, y: rect.minY + 48, width: rect.width - 28, height: 30), theme: t, ctx: ctx)
         // Each provider's group, magnified, centered in the space under the strip.
@@ -105,13 +105,16 @@ enum OnboardingStage {
         Text(what, F.sf(12, 500), t.muted).draw(x: rect.midX, capCenter: box.maxY + 42, align: .center, in: ctx)
     }
 
-    private static func session(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
-        var presenter = Presenter(now: Demo.now, policy: settings.policy, options: PresentationOptions(sessionDetail: .detailed))
+    static func session(_ rect: CGRect, settings: AppSettings, theme t: Theme, ctx: CGContext) {
+        var options = settings.presentation
+        options.sessionDetail = .detailed
+        var presenter = Presenter(now: Demo.now, policy: settings.policy, options: options)
         presenter.locale = Display.locale
         let input = Demo.claudeMockup(now: Demo.now)
         guard let reading = input.reading, let status = SessionStatus(window: reading.session, now: Demo.now, policy: settings.policy) else { return }
-        let f = SessionForecast(window: reading.session, samples: input.samples[LimitWindow.sessionID()] ?? [], now: Demo.now)
-        var module = presenter.sessionModule(status, forecast: f, weekLeft: reading.headline?.remaining)
+        let samples = input.samples[LimitWindow.sessionID()] ?? []
+        let f = SessionForecast(window: reading.session, samples: samples, now: Demo.now)
+        var module = presenter.sessionModule(status, forecast: f, weekLeft: reading.headline?.remaining, samples: samples)
         module.onTop = true
         let x = rect.minX + 16, w = rect.width - 32
         var y = rect.minY + 46

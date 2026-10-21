@@ -25,10 +25,19 @@ enum GlideChartRenderer {
         let col: NSColor = g.brandLine.map { theme.isDark ? Brand.of($0).light : Brand.of($0).base } ?? theme.pacing(g.state).text
         let warnCol = theme.rose
 
+        // The 5-hour session: hour lines, labelled at the line.
+        let hourly = hours <= 12
         // Day boundaries at local midnight; weekly boundaries for long (monthly) windows.
         let weekly = hours > 240
         var bounds: [Double] = [0]
-        if let firstMidnight = calendar.nextDate(after: g.windowStart, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) {
+        if hourly {
+            // From the first full hour after the start.
+            var h = (calendar.dateInterval(of: .hour, for: g.windowStart)?.end ?? g.windowStart).timeIntervalSince(g.windowStart) / 3600
+            while h < hours - 0.01 {
+                if h > 0.01 { bounds.append(h) }
+                h += 1
+            }
+        } else if let firstMidnight = calendar.nextDate(after: g.windowStart, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) {
             var d = firstMidnight
             while true {
                 let h = d.timeIntervalSince(g.windowStart) / 3600
@@ -53,9 +62,17 @@ enum GlideChartRenderer {
             warnDay = bounds.indices.dropLast().first { endT >= bounds[$0] && endT < bounds[$0 + 1] }
         }
 
-        // Day labels; today in a pill.
+        // Day labels; today in a pill. Hour labels sit on their line; the hour it runs out in turns rose.
         let dayFont = F.sf(8.5, 600), dayFontBold = F.sf(8.5, 750)
-        for i in 0..<(bounds.count - 1) where bounds[i + 1] - bounds[i] >= (weekly ? 72 : 12) {
+        for (i, b) in bounds.enumerated() where hourly && i > 0 && i < bounds.count - 1 {
+            let x = X(b)
+            let warn = warnDay == i
+            let label = Text(hourLabel(g.windowStart.addingTimeInterval(b * 3600), calendar: calendar, locale: locale),
+                             warn ? dayFontBold : dayFont, warn ? warnCol : theme.chartLabel, kern: 0.5)
+            guard x - label.width / 2 > 0, x + label.width / 2 < W else { continue }
+            label.draw(x: x + 0.25, baseline: H - 5, align: .center, in: ctx)
+        }
+        for i in 0..<(bounds.count - 1) where !hourly && bounds[i + 1] - bounds[i] >= (weekly ? 72 : 12) {
             let cx = X((bounds[i] + bounds[i + 1]) / 2)
             let current = g.nowT >= bounds[i] && g.nowT < bounds[i + 1]
             let warn = warnDay == i
@@ -81,7 +98,7 @@ enum GlideChartRenderer {
         var rawRuns: [[GlideModel.Point]] = []
         var lastT: Double? = nil
         for p in pts {
-            if let lt = lastT, p.t - lt <= 2.0, !rawRuns.isEmpty { rawRuns[rawRuns.count - 1].append(p) } else { rawRuns.append([p]) }
+            if let lt = lastT, p.t - lt <= min(2.0, hours / 6), !rawRuns.isEmpty { rawRuns[rawRuns.count - 1].append(p) } else { rawRuns.append([p]) }
             lastT = p.t
         }
         var runs: [[CGPoint]] = rawRuns.map { run in decimate(run, step: hours / 56).map { CGPoint(x: X($0.t), y: Y(1 - $0.used)) } }
@@ -135,7 +152,8 @@ enum GlideChartRenderer {
             ctx.fill(end, theme.cardSolid)
             ctx.stroke(end, col, width: 1.6)
             if let label = g.endLabel {
-                Text(label, F.sf(9.5, 650), col).draw(x: W, baseline: ey + 16, align: .right, in: ctx)
+                // Under the end point, unless that runs into the axis labels.
+                Text(label, F.sf(9.5, 650), col).draw(x: W, baseline: ey + 16 > bot + 4 ? ey - 9 : ey + 16, align: .right, in: ctx)
             }
         }
 
@@ -205,6 +223,11 @@ enum GlideChartRenderer {
 
     private static func weekdayAbbrev(_ date: Date, calendar: Calendar, locale: Locale) -> String {
         Formatters.template("EEE", calendar: calendar, locale: locale).string(from: date).uppercased().replacingOccurrences(of: ".", with: "")
+    }
+
+    /// "9 AM", or "09" on a 24-hour clock.
+    private static func hourLabel(_ date: Date, calendar: Calendar, locale: Locale) -> String {
+        Formatters.template("j", calendar: calendar, locale: locale).string(from: date).uppercased()
     }
 
     private static func monthDayLabel(_ date: Date, calendar: Calendar, locale: Locale) -> String {
