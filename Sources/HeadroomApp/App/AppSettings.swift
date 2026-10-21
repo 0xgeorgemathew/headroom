@@ -75,6 +75,18 @@ final class AppSettings {
 
     var policy: PacingPolicy { .sessionWarning(at: sessionWarnAt) }
 
+    // MARK: Pace card
+
+    /// The five-cell meter and the graph, for the week and the 5-hour session. All on by default.
+    func shows(_ part: CardPart) -> Bool {
+        defaults.object(forKey: "show.\(part.rawValue)") as? Bool ?? true
+    }
+
+    func setShows(_ part: CardPart, _ on: Bool) {
+        defaults.set(on, forKey: "show.\(part.rawValue)")
+        changed()
+    }
+
     // MARK: Menu bar extras
 
     var meterFocus: MeterFocus {
@@ -101,7 +113,7 @@ final class AppSettings {
     /// Everything the presenters need from Settings.
     var presentation: PresentationOptions {
         PresentationOptions(sessionDetail: sessionDetail, meterFocus: meterFocus, alwaysShowSessionTimer: alwaysShowSessionTimer,
-                            showPercent: showPercentInMenuBar)
+                            showPercent: showPercentInMenuBar, parts: Set(CardPart.allCases.filter(shows)))
     }
 
     // MARK: Notifications
@@ -158,6 +170,11 @@ enum SessionDetail: String, CaseIterable, Sendable {
     var title: String { self == .detailed ? "Detailed" : "Compact" }
 }
 
+/// The optional pieces of a Pace card.
+enum CardPart: String, CaseIterable, Sendable {
+    case weekMeter, weekGraph, sessionMeter, sessionGraph
+}
+
 /// What the five menu bar cells measure.
 enum MeterFocus: String, CaseIterable, Sendable {
     case week, session, tighter
@@ -207,4 +224,6 @@ struct PresentationOptions: Equatable, Sendable {
     var meterFocus: MeterFocus = .week
     var alwaysShowSessionTimer = false
     var showPercent = false
+    /// Meters and graphs to draw on each Pace card.
+    var parts: Set<CardPart> = Set(CardPart.allCases)
 }

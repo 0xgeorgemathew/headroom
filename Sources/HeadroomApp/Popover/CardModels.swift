@@ -42,6 +42,9 @@ struct SessionModuleModel: Equatable {
     var endLabel: String?
     /// Shown right under the header once it warns; below the week otherwise.
     var onTop: Bool
+    /// The session's own five cells and graph (Settings → Pace card); the slim timeline stands in when both are off.
+    var meter: MeterModel? = nil
+    var glide: GlideModel? = nil
 }
 
 struct HeroModel: Equatable {
@@ -132,6 +135,9 @@ struct PaceCardModel: Equatable {
     var callout: CalloutModel?
     var rows: [DetailRowModel]
     var fault: FaultBannerModel?
+    /// Settings can hide the week's meter and graph; the models stay for sharing and the menu bar.
+    var showsMeter = true
+    var showsGlide = true
 }
 
 // MARK: - Activity

@@ -76,7 +76,27 @@ enum Demo {
         let reading = LimitReading(provider: .codex, fetchedAt: at(now, hours: -2.0 / 60), source: .appServer,
                                    plan: PlanCatalog.codex(planType: "pro"), windows: [session, weekly],
                                    resetCredits: credits, resetCreditsAvailable: 3)
-        return PaceInput(provider: .codex, reading: reading, samples: ["weekly": samples(cum, start: start)], weekCostMicros: 186_000_000)
+        return PaceInput(provider: .codex, reading: reading, samples: ["weekly": samples(cum, start: start), "session": sessionSamples(used: 0.10, elapsedH: 0.8, now: now)],
+                         weekCostMicros: 186_000_000)
+    }
+
+    /// Ten-minute samples for a session `elapsedH` in, with a quiet patch and a busier stretch, ending at `used`.
+    static func sessionSamples(used: Double, elapsedH: Double, now: Date) -> [UsageSample] {
+        guard used > 0 else { return [] }
+        let start = at(now, hours: -elapsedH)
+        let steps = max(1, Int(elapsedH * 6))
+        let weights = (0..<steps).map { i -> Double in
+            let x = Double(i) / Double(steps)
+            return x > 0.35 && x < 0.5 ? 0.25 : 0.8 + 0.4 * sin(Double(i) * 1.7)
+        }
+        let total = weights.reduce(0, +)
+        var cum = 0.0
+        var out = [UsageSample(time: start, used: 0)]
+        for (i, w) in weights.enumerated() {
+            cum += w / total * used
+            out.append(UsageSample(time: at(start, hours: Double(i + 1) / 6), used: min(cum, used)))
+        }
+        return out
     }
 
     /// A single-window state for the state gallery: used `u` with `elapsedH` of 168 gone,
@@ -98,7 +118,8 @@ enum Demo {
         let plan = p == .claude ? PlanCatalog.claude(subscriptionType: "max", rateLimitTier: "default_claude_max_5x") : PlanCatalog.codex(planType: "plus")
         let reading = LimitReading(provider: p, fetchedAt: at(now, hours: fault == nil ? -1.0 / 60 : -1.6), source: p == .claude ? .api : .appServer,
                                    plan: plan, windows: [sess, weekly] + caps, resetCredits: credits)
-        return PaceInput(provider: p, reading: reading, samples: ["weekly": s], fault: fault, weekCostMicros: p == .claude ? 96_400_000 : 31_200_000)
+        return PaceInput(provider: p, reading: reading, samples: ["weekly": s, "session": sessionSamples(used: session, elapsedH: 2.8, now: now)],
+                         fault: fault, weekCostMicros: p == .claude ? 96_400_000 : 31_200_000)
     }
 
     static func paceScenarios(now: Date) -> [PaceScenario] {

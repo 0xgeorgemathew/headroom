@@ -48,8 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let step = args.firstIndex(of: "--welcome-step").flatMap { $0 + 1 < args.count ? Int(args[$0 + 1]) : nil } ?? 0
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.showOnboarding(step: step) }
         }
+        // Test hook: `--open-settings [--settings-section N]`.
         if args.contains("--open-settings") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showSettings() }
+            let section = args.firstIndex(of: "--settings-section").flatMap { $0 + 1 < args.count ? Int(args[$0 + 1]) : nil }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showSettings(section: section) }
         }
         if args.contains("--register-login-item") {
             try? SMAppService.mainApp.register()
@@ -84,14 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboarding?.show(step: step)
     }
 
-    func showSettings() {
+    func showSettings(section: Int? = nil) {
         if settingsWindow == nil {
             settingsWindow = SettingsWindowController(settings: settings, model: model)
             settingsWindow?.openWelcome = { [weak self] in self?.showOnboarding() }
         }
-        NSApp.activate()
-        settingsWindow?.showWindow(nil)
-        settingsWindow?.window?.makeKeyAndOrderFront(nil)
+        settingsWindow?.show(section: section)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
