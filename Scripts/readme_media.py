@@ -226,6 +226,14 @@ def main():
 .mb img { height: 22px; }
 .mb em { font: normal 500 13px -apple-system, system-ui; color: #F4F4F6; font-variant-numeric: tabular-nums; }""")
 
+        # Settings: the Pace Card and 5-hour sections, dark and light.
+        sw, sh = png_size(raw / "settings-3-dark.png")
+        set_h = round(cell_w * sh / sw)
+        body = "".join(f"<div>{eyebrow(t)}<div class='shot win'><img src='{raw}/settings-{n}.png'></div></div>"
+                       for t, n in (("Pace Card · meters and graphs", "3-dark"), ("5-hour session warning", "4-light")))
+        panel("settings", f'<div class="grid" style="grid-template-columns:1fr 1fr">{body}</div>', 960, grid_height(1, set_h), raw, work,
+              ".win { border-radius: 12px; box-shadow: 0 14px 34px rgba(0,0,0,.45); }")
+
         # Callouts: model caps, early reset, reset credits.
         calls = [("Model cap reached", "cap-empty-dark"), ("Model cap tighter than the week", "cap-tight-light"),
                  ("Early reset", "early-reset-dark"), ("Reset credits expiring", "credits-light")]

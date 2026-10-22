@@ -143,6 +143,7 @@ enum GlideChartRenderer {
         // Projection.
         let ex = X(endT), ey = Y(endR)
         ctx.withState { ctx.setAlpha(0.85); ctx.stroke(line(nx, ny, ex, ey), col, width: 2, dash: [0.1, 4.4], cap: .round) }
+        var endRect = CGRect.null
         if g.runsOut {
             let halo = CGMutablePath(); halo.addEllipse(in: CGRect(x: ex - 9, y: ey - 9, width: 18, height: 18))
             ctx.fill(halo, warnCol.fade(0.18))
@@ -153,7 +154,11 @@ enum GlideChartRenderer {
             ctx.stroke(end, col, width: 1.6)
             if let label = g.endLabel {
                 // Under the end point, unless that runs into the axis labels.
-                Text(label, F.sf(9.5, 650), col).draw(x: W, baseline: ey + 16 > bot + 4 ? ey - 9 : ey + 16, align: .right, in: ctx)
+                let text = Text(label, F.sf(9.5, 650), col)
+                let baseline = ey + 16 > bot + 4 ? ey - 9 : ey + 16
+                let str = NSAttributedString(string: label, attributes: [.font: F.sf(9.5, 650), .foregroundColor: col])
+                drawOutlined(str, center: CGPoint(x: W - text.width / 2, y: baseline), outline: theme.cardSolid, ctx: ctx)
+                endRect = CGRect(x: W - text.width, y: baseline - 12, width: text.width, height: 16)
             }
         }
 
@@ -172,6 +177,8 @@ enum GlideChartRenderer {
 
         // EVEN PACE label in the emptier half, outlined in the card color.
         let evenAt = g.nowT > hours * 0.6 ? g.nowT * 0.75 : g.nowT + (hours - g.nowT) * 0.6
+        // Leave it out when it would sit on the end label; the dashed line reads on its own.
+        guard !CGRect(x: X(evenAt) - 30, y: Y(1 - evenAt / hours) - 14, width: 60, height: 16).intersects(endRect) else { return }
         let ly = Y(1 - evenAt / hours) - 6
         let label = NSMutableAttributedString(string: "EVEN PACE", attributes: [.font: F.sf(8.5, 650), .kern: 0.6, .foregroundColor: theme.chartLabel])
         drawOutlined(label, center: CGPoint(x: X(evenAt), y: ly), outline: theme.cardSolid, ctx: ctx)
@@ -237,8 +244,9 @@ enum GlideChartRenderer {
     private static func drawOutlined(_ s: NSAttributedString, center: CGPoint, outline: NSColor, ctx: CGContext) {
         let outlined = NSMutableAttributedString(attributedString: s)
         let range = NSRange(location: 0, length: outlined.length)
-        outlined.addAttributes([.strokeColor: outline, .strokeWidth: 3 / 8.5 * 100, .foregroundColor: outline], range: range)
-        let w = Text([Text(s.string, F.sf(8.5, 650), .black, kern: 0.6)]).width
+        let size = (s.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? 8.5
+        outlined.addAttributes([.strokeColor: outline, .strokeWidth: 3 / size * 100, .foregroundColor: outline], range: range)
+        let w = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(s), nil, nil, nil)
         for str in [outlined as NSAttributedString, s] {
             let line = CTLineCreateWithAttributedString(str)
             ctx.saveGState()
