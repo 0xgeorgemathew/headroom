@@ -51,6 +51,12 @@ Each provider gets five cells in your menu bar. **Blue** means you have room to 
 
 Add the percentage beside each meter, keep the 5-hour timer always visible, show only the most urgent provider, or let the cells track the 5-hour session instead of the week (marked with a small **5H**). **Whichever is tighter** switches over only while the session is the closer limit. Light, dark or system appearance, your call.
 
+## Settings, with a live preview
+
+<img src="media/settings.png" alt="Settings: the Pace Card section with meter and graph toggles beside a live card, and the 5-hour session section with the warning level and a sample alert">
+
+Settings looks and works like the welcome window. Each section shows a live preview of what it changes, so you see the card, menu bar or alert before you leave. Turn the meter and the graph on or off for the week and for the 5-hour session, set prices for your plan, and install the `headroom` command.
+
 ## Pace, not just a percentage
 
 <img src="media/pace.png" alt="The four pacing states: Plenty available, On pace, Getting tight, Very tight">
@@ -61,11 +67,11 @@ Add the percentage beside each meter, keep the 5-hour timer always visible, show
 
 <img src="media/session.png" alt="The 5-hour panel: not started, on track with a forecast, a heads-up that it runs out before the reset, amber and rose warnings, and paused until reset">
 
-The 5-hour session is usually the limit you hit first, so it gets its own panel on every card: how much is left, a timeline of the five hours with where you are now, and a forecast from your recent pace: *about 25% left when it resets*, or *runs out around 11:52 AM, 20m before the reset*. Once it crosses your warning level (75% by default, or 50, 60 or 90%) it moves to the top of the card and turns amber, then rose. At the limit it tells you exactly when you're back, and how much of the week is still waiting.
+The 5-hour session is usually the limit you hit first, so it gets its own panel on every card, built like the week: five cells for what's left with even pace marked, a graph of the five hours so far and where they're heading, and a forecast from your recent pace: *about 25% left when it resets*, or *runs out around 11:52 AM, 20m before the reset*. Once it crosses your warning level (75% by default, or 50, 60 or 90%) it moves to the top of the card and turns amber, then rose. At the limit it tells you exactly when you're back, and how much of the week is still waiting.
 
 <img src="media/sessions.png" alt="Recent 5-hour sessions in the Activity tab, showing each session's peak and which ones hit the limit">
 
-The Activity tab keeps your recent sessions, so a run of near-misses stands out. Optional notifications tell you when a session is nearly used, when you hit the limit, and the moment it's back. Prefer the old single row? Choose **Compact** in Settings.
+The Activity tab keeps your recent sessions, so a run of near-misses stands out. Optional notifications tell you when a session is nearly used, when you hit the limit, and the moment it's back. Prefer the old single row? Choose **A single row** in Settings.
 
 ## Caps, early resets and expiring credits
 
